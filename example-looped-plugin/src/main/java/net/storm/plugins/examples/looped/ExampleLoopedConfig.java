@@ -7,43 +7,43 @@ import net.storm.api.plugins.config.ConfigGroup;
 import net.storm.api.plugins.config.ConfigItem;
 
 @ConfigGroup(ExampleLoopedConfig.GROUP)
-@SoxExclude // Exclude from obfuscation
+@SoxExclude
 public interface ExampleLoopedConfig extends Config {
     String GROUP = "example-looped-plugin";
 
     @ConfigItem(
-            keyName = "npcName",
-            name = "NPC Name",
-            description = "Name of the NPC to attack"
+            keyName = "minRunEnergy",
+            name = "Min Run Energy",
+            description = "Minimum run energy before restoring at POH"
     )
-    default String npcName() {
-        return "Goblin";
+    default int minRunEnergy() {
+        return 30;
     }
 
     @ConfigItem(
-            keyName = "eatFood",
-            name = "Eat Food?",
-            description = "Eat food when low hp?"
+            keyName = "useColossalPouch",
+            name = "Use Colossal Pouch",
+            description = "Use colossal pouch for extra essence"
     )
-    default boolean eatFood() {
+    default boolean useColossalPouch() {
         return true;
     }
 
     @ConfigItem(
-            keyName = "foodName",
-            name = "Food Name",
-            description = "Name of the food to eat"
+            keyName = "pause",
+            name = "Pause",
+            description = "Pause the plugin"
     )
-    default String foodName() {
-        return "Lobster";
+    default boolean pause() {
+        return false;
     }
 
     @ConfigItem(
-            keyName = "foodHp",
-            name = "Food HP %",
-            description = "HP percentage to eat food at"
+            keyName = "wrathRunePrice",
+            name = "Wrath Rune Price",
+            description = "Price per wrath rune for GP calculations"
     )
-    default int foodHp() {
-        return 50;
+    default int wrathRunePrice() {
+        return 240;
     }
 }

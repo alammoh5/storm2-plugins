@@ -2,53 +2,145 @@ package net.storm.plugins.examples.looped;
 
 import com.google.inject.Inject;
 import com.google.inject.Provides;
-import net.storm.api.plugins.LoopedPlugin;
+import lombok.extern.slf4j.Slf4j;
+import net.runelite.api.Skill;
+import net.runelite.api.events.ItemContainerChanged;
+import net.runelite.api.events.StatChanged;
+import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.ui.overlay.OverlayManager;
+import net.storm.api.domain.actors.IPlayer;
+import net.storm.api.events.ConfigChanged;
 import net.storm.api.plugins.PluginDescriptor;
+import net.storm.api.plugins.Task;
+import net.storm.api.plugins.TaskPlugin;
 import net.storm.api.plugins.config.ConfigManager;
-import net.storm.sdk.entities.NPCs;
+import net.storm.plugins.examples.looped.misc.Constants;
+import net.storm.plugins.examples.looped.tasks.*;
 import net.storm.sdk.entities.Players;
-import net.storm.sdk.game.Combat;
+import net.storm.sdk.game.Skills;
 import net.storm.sdk.items.Inventory;
 import org.pf4j.Extension;
 
-/*
- * A very basic example of a looped plugin.
- *
- * Important notes: look at the imports! The class names are similar to RuneLite's API, but they are not the same.
- * Always use the Storm SDK's classes when developing plugins.
- *
- * Ensure that your package names start with net.storm.plugins, or your plugin will not be compatible with the SDN.
- */
-@PluginDescriptor(name = "Example Looped Plugin")
+@Slf4j
+@PluginDescriptor(name = "WrathCrafter")
 @Extension
-public class ExampleLoopedPlugin extends LoopedPlugin {
+public class ExampleLoopedPlugin extends TaskPlugin {
+
+    public String status;
+    public String locationInfo = "";
+    public long startTime;
+    public boolean isPaused;
+    public boolean equipmentSetupComplete = false;
+    public boolean bankingComplete = false;
+    public boolean needsPOHRestore = false;
+    public int colossalPouchQuantity = 0;
+
+    public int totalXpGained = 0;
+    public int totalWrathRunesCrafted = 0;
+    private int previousWrathRuneCount = 0;
+    private int startingRcXp = -1;
+    
+    public int totalWrathRunesInBank = 0;
+    public long totalWrathRunesGpValue = 0;
+
+    public Task[] tasks;
+    public Task currentTask;
+
     @Inject
     private ExampleLoopedConfig config;
 
+    @Inject
+    private OverlayManager overlayManager;
+
+    @Inject
+    private ExampleLoopedOverlay overlay;
+
     @Override
-    public int loop() {
-        if (config.eatFood() && Combat.getHealthPercent() < config.foodHp()) {
-            var food = Inventory.getFirst(config.foodName());
-            if (food != null) {
-                food.interact("Eat");
-                return 1200; // Eat, do not execute any other actions if eating, and wait for 1200 milliseconds
+    public void startUp() {
+        startTime = System.currentTimeMillis();
+        startingRcXp = Skills.getExperience(Skill.RUNECRAFT);
+        overlayManager.add(overlay);
+
+        tasks = new Task[]{
+                new EquipmentSetup(this),
+                new Banking(this, config),
+                new POHRestore(this),
+                new TravelToAltar(this),
+                new Crafting(this),
+                new ReturnToBank(this)
+        };
+    }
+
+    @Override
+    public void shutDown() {
+        overlayManager.remove(overlay);
+    }
+
+    @Override
+    public Task[] getTasks() {
+        if (isPaused) {
+            status = "Paused...";
+            currentTask = null;
+            return new Task[0];
+        }
+
+        IPlayer local = Players.getLocal();
+        if (local == null) {
+            currentTask = null;
+            return new Task[0];
+        }
+
+        for (Task task : tasks) {
+            if (task.validate()) {
+                currentTask = task;
+                break;
             }
         }
 
-        var localPlayer = Players.getLocal();
-        var npc = NPCs.query()
-                .names(config.npcName())
-                .results()
-                .nearest(localPlayer);
-        if (npc != null && !localPlayer.isInteracting() && npc.isInteractable()) {
-            npc.interact("Attack");
+        return tasks;
+    }
+
+    @Subscribe
+    private void onConfigChanged(ConfigChanged e) {
+        if (!e.getGroup().equals(ExampleLoopedConfig.GROUP)) {
+            return;
         }
 
-        return 1000; // Sleep for 1000 milliseconds
+        if (e.getKey().equals("pause")) {
+            isPaused = !isPaused;
+        }
+    }
+
+    @Subscribe
+    private void onStatChanged(StatChanged e) {
+        if (e.getSkill() != Skill.RUNECRAFT) {
+            return;
+        }
+
+        if (startingRcXp == -1) {
+            startingRcXp = Skills.getExperience(Skill.RUNECRAFT);
+        }
+
+        int currentXp = Skills.getExperience(Skill.RUNECRAFT);
+        totalXpGained = currentXp - startingRcXp;
+        log.info("Runecrafting XP updated (Total gained: " + totalXpGained + ")");
+    }
+
+    @Subscribe
+    private void onItemContainerChanged(ItemContainerChanged e) {
+        int currentWrathCount = Inventory.getCount(true, Constants.WRATH_RUNE);
+        
+        if (currentWrathCount > previousWrathRuneCount) {
+            int runesCrafted = currentWrathCount - previousWrathRuneCount;
+            totalWrathRunesCrafted += runesCrafted;
+            log.info("Wrath runes crafted: " + runesCrafted + " (Total: " + totalWrathRunesCrafted + ")");
+        }
+        
+        previousWrathRuneCount = currentWrathCount;
     }
 
     @Provides
-    ExampleLoopedConfig provideConfig(ConfigManager configManager) {
+    public ExampleLoopedConfig provideConfig(ConfigManager configManager) {
         return configManager.getConfig(ExampleLoopedConfig.class);
     }
 }
