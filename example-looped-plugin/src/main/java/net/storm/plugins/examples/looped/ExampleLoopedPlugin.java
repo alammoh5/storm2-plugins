@@ -64,7 +64,7 @@ public class ExampleLoopedPlugin extends TaskPlugin {
         tasks = new Task[]{
                 new EquipmentSetup(this),
                 new Banking(this, config),
-                new POHRestore(this),
+                new POHRestore(this, config),
                 new TravelToAltar(this),
                 new Crafting(this),
                 new ReturnToBank(this)

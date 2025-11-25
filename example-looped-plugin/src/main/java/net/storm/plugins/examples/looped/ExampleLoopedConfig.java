@@ -46,4 +46,13 @@ public interface ExampleLoopedConfig extends Config {
     default int wrathRunePrice() {
         return 240;
     }
+
+    @ConfigItem(
+            keyName = "friendsPOHName",
+            name = "Friend's POH Name",
+            description = "Name of friend to use their POH. Leave blank to use your own POH."
+    )
+    default String friendsPOHName() {
+        return "";
+    }
 }

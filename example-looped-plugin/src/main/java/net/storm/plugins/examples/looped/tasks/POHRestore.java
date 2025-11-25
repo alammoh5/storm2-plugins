@@ -1,22 +1,28 @@
 package net.storm.plugins.examples.looped.tasks;
 
-import lombok.extern.slf4j.Slf4j;
 import net.storm.api.domain.tiles.ITileObject;
 import net.storm.api.magic.SpellBook;
 import net.storm.api.plugins.Task;
+import net.storm.plugins.examples.looped.ExampleLoopedConfig;
 import net.storm.plugins.examples.looped.ExampleLoopedPlugin;
 import net.storm.plugins.examples.looped.misc.Constants;
 import net.storm.sdk.entities.TileObjects;
 import net.storm.sdk.items.Inventory;
 import net.storm.sdk.magic.Magic;
-    
-@Slf4j
+import net.storm.sdk.widgets.Dialog;
+
 public class POHRestore implements Task {
 
     private final ExampleLoopedPlugin plugin;
+    private final ExampleLoopedConfig config;
+    
+    private boolean enteredFriendHouse = false;
+    private boolean waitingForDialog = false;
+    private String pendingFriendName = null;
 
-    public POHRestore(ExampleLoopedPlugin plugin) {
+    public POHRestore(ExampleLoopedPlugin plugin, ExampleLoopedConfig config) {
         this.plugin = plugin;
+        this.config = config;
     }
 
     @Override
@@ -26,14 +32,25 @@ public class POHRestore implements Task {
 
     @Override
     public int execute() {
-        plugin.status = "Restoring at POH...";
-
+        String friendsName = config.friendsPOHName();
         ITileObject ornatePool = TileObjects.getNearest(Constants.ORNATE_POOL);
+        ITileObject insidePortal = TileObjects.getNearest(Constants.POH_PORTAL_INSIDE);
+        ITileObject outsidePortal = TileObjects.getNearest(Constants.POH_PORTAL_OUTSIDE);
+        boolean useFriendsPOH = friendsName != null && !friendsName.trim().isEmpty();
+
+        if (useFriendsPOH) {
+            return executeFriendsPOH(friendsName.trim(), ornatePool, insidePortal, outsidePortal);
+        } else {
+            return executeOwnPOH(ornatePool, insidePortal, outsidePortal);
+        }
+    }
+
+    private int executeOwnPOH(ITileObject ornatePool, ITileObject insidePortal, ITileObject outsidePortal) {
+        plugin.status = "Restoring at POH...";
 
         if (ornatePool == null) {
             plugin.status = "No ornate pool found, teleporting to house...";
             if (!Inventory.contains(Constants.LAW_RUNE) || !Inventory.contains(Constants.DUST_RUNE)) {
-                log.error("Missing runes for teleport to house!");
                 plugin.needsPOHRestore = false;
                 return -1;
             }
@@ -42,13 +59,63 @@ public class POHRestore implements Task {
         }
         if(ornatePool.isInteractable()) {
             plugin.status = "Drinking from ornate pool...";
-
             ornatePool.interact("Drink");
             plugin.needsPOHRestore = false;
             return 4000;
-
-    }
+        }
         return -1;
+    }
+
+    private int executeFriendsPOH(String friendsName, ITileObject ornatePool, ITileObject insidePortal, ITileObject outsidePortal) {
+        if (ornatePool != null && ornatePool.isInteractable()) {
+            plugin.status = "Drinking from ornate pool...";
+            ornatePool.interact("Drink");
+            plugin.needsPOHRestore = false;
+            enteredFriendHouse = false;
+            return 4000;
+        }
+
+        if (!enteredFriendHouse) {
+            return handleEnterFriendHouse(friendsName, ornatePool, insidePortal, outsidePortal);
+        }
+
+        plugin.status = "Waiting to enter friend's house...";
+        return 2000;
+    }
+
+    private int handleEnterFriendHouse(String friendsName, ITileObject ornatePool, ITileObject insidePortal, ITileObject outsidePortal) {
+        if (waitingForDialog && pendingFriendName != null) {
+            Dialog.enterName(pendingFriendName);
+            waitingForDialog = false;
+            enteredFriendHouse = true;
+            return 2000;
+        }
+
+        if (ornatePool == null && insidePortal != null && insidePortal.isInteractable()) {
+            plugin.status = "Exiting house to portal...";
+            insidePortal.interact("Enter");
+            return 2000;
+        }
+
+        if (outsidePortal != null && insidePortal == null) {
+            plugin.status = "Entering friend's house...";
+            outsidePortal.interact("Friend's house");
+            pendingFriendName = friendsName;
+            waitingForDialog = true;
+            return 2000;
+        }
+
+        if (insidePortal == null && outsidePortal == null) {
+            plugin.status = "Teleporting to house...";
+            if (!Inventory.contains(Constants.LAW_RUNE) || !Inventory.contains(Constants.DUST_RUNE)) {
+                plugin.needsPOHRestore = false;
+                return -1;
+            }
+            Magic.cast(SpellBook.Standard.TELEPORT_TO_HOUSE);
+            return 4000;
+        }
+
+        return 1000;
     }
 }
 

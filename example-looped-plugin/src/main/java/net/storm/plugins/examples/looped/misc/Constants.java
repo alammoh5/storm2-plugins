@@ -45,6 +45,8 @@ public final class Constants {
     public static final String CAVE_EXIT = "Cave";
     public static final String STATUE = "Mythic Statue";
     public static final int STATUE_ID = 31626;
+    public static final int POH_PORTAL_OUTSIDE = 15478;
+    public static final int POH_PORTAL_INSIDE = 4525;
 
     public static final WorldPoint CAVE_WALK_POINT = new WorldPoint(1933, 8982, 1);
 
