@@ -36,7 +36,6 @@ public class Banking implements Task {
         log.info("Colossal Pouch Quantity: " + Vars.getBit(Varbits.ESSENCE_POUCH_COLOSSAL_AMOUNT));
         plugin.colossalPouchQuantity = Vars.getBit(Varbits.ESSENCE_POUCH_COLOSSAL_AMOUNT);
         plugin.status = "Colossal Pouch Quantity: " + plugin.colossalPouchQuantity;
-        plugin.needsPOHRestore = Movement.getRunEnergy() < config.minRunEnergy();
 
         if (!Bank.isOpen()) {
             var bankBooth = TileObjects.getNearest("Bank booth");
@@ -55,6 +54,7 @@ public class Banking implements Task {
             
             plugin.status = "Opening bank...";
             Bank.open();
+            plugin.needsPOHRestore = Movement.getRunEnergy() <= config.minRunEnergy();
             return -1;
         }
 
@@ -104,7 +104,6 @@ public class Banking implements Task {
 
         Bank.close();
         plugin.status = "Banking complete...";
-        plugin.needsPOHRestore = Movement.getRunEnergy() < config.minRunEnergy();
         plugin.bankingComplete = true;
         return -1;
     }

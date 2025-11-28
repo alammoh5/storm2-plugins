@@ -74,6 +74,20 @@ public class ExampleLoopedPlugin extends TaskPlugin {
     @Override
     public void shutDown() {
         overlayManager.remove(overlay);
+        this.bankingComplete = false;
+        this.equipmentSetupComplete = false;
+        this.needsPOHRestore = false;
+        this.colossalPouchQuantity = 0;
+        this.totalXpGained = 0;
+        this.totalWrathRunesCrafted = 0;
+        this.totalWrathRunesInBank = 0;
+        this.totalWrathRunesGpValue = 0;
+        this.previousWrathRuneCount = 0;
+        this.startingRcXp = -1;
+        this.status = "";
+        this.locationInfo = "";
+        this.startTime = 0;
+        this.isPaused = false;
     }
 
     @Override

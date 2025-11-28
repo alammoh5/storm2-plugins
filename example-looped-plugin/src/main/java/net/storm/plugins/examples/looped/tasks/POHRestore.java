@@ -10,7 +10,11 @@ import net.storm.sdk.entities.TileObjects;
 import net.storm.sdk.items.Inventory;
 import net.storm.sdk.magic.Magic;
 import net.storm.sdk.widgets.Dialog;
+import net.storm.sdk.widgets.Widgets;
 
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
 public class POHRestore implements Task {
 
     private final ExampleLoopedPlugin plugin;
@@ -19,12 +23,13 @@ public class POHRestore implements Task {
     private boolean enteredFriendHouse = false;
     private boolean waitingForDialog = false;
     private String pendingFriendName = null;
+    private long lastTeleportTime = 0;
+    private int dialogAttempts = 0;
 
     public POHRestore(ExampleLoopedPlugin plugin, ExampleLoopedConfig config) {
         this.plugin = plugin;
         this.config = config;
     }
-
     @Override
     public boolean validate() {
         return plugin.equipmentSetupComplete && plugin.needsPOHRestore && !Inventory.contains(Constants.WRATH_RUNE);
@@ -85,15 +90,20 @@ public class POHRestore implements Task {
 
     private int handleEnterFriendHouse(String friendsName, ITileObject ornatePool, ITileObject insidePortal, ITileObject outsidePortal) {
         if (waitingForDialog && pendingFriendName != null) {
+            dialogAttempts++;
+            if (dialogAttempts > 10) {
+                log.error("Failed to enter friend's house after {} attempts. Stopping plugin.", dialogAttempts - 1);
+                plugin.setStopped(true);
+                return -1;
+            }
             Dialog.enterName(pendingFriendName);
             waitingForDialog = false;
-            enteredFriendHouse = true;
             return 2000;
         }
 
-        if (ornatePool == null && insidePortal != null && insidePortal.isInteractable()) {
-            plugin.status = "Exiting house to portal...";
-            insidePortal.interact("Enter");
+        if (ornatePool != null || insidePortal != null) {
+            enteredFriendHouse = true;
+            dialogAttempts = 0;
             return 2000;
         }
 
@@ -106,13 +116,22 @@ public class POHRestore implements Task {
         }
 
         if (insidePortal == null && outsidePortal == null) {
-            plugin.status = "Teleporting to house...";
-            if (!Inventory.contains(Constants.LAW_RUNE) || !Inventory.contains(Constants.DUST_RUNE)) {
-                plugin.needsPOHRestore = false;
+            long currentTime = System.currentTimeMillis();
+            if (currentTime - lastTeleportTime < 5000) {
+                plugin.status = "Waiting for house to load...";
+                return 2000;
+            }
+            plugin.status = "Teleporting outside house...";
+            var outsideWidget = Widgets.get(218, 31);
+            if (outsideWidget != null) {
+                outsideWidget.interact("Outside");
+                lastTeleportTime = currentTime;
+                return 4000;
+            } else {
+                log.info("No outside widget found");
+                plugin.setStopped(true);
                 return -1;
             }
-            Magic.cast(SpellBook.Standard.TELEPORT_TO_HOUSE);
-            return 4000;
         }
 
         return 1000;

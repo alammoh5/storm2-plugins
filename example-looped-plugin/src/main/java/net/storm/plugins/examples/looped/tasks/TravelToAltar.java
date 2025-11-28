@@ -40,7 +40,7 @@ public class TravelToAltar implements Task {
                              " | Cave: " + (caveExit != null ? "Found" : "None") +
                              " | Fountain: " + (fountain != null ? "Found" : "None");
 
-        if (statue == null && wrathAltarRuins == null && caveExit == null) {
+        if (statue == null && caveExit == null) {
             plugin.status = "Teleporting to Myths' Guild";
             var mythCape = Inventory.getFirst(Constants.MYTHICAL_CAPE);
             if (mythCape != null) {
