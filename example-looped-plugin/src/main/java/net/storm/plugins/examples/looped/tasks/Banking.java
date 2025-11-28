@@ -20,7 +20,6 @@ public class Banking implements Task {
 
     private final ExampleLoopedPlugin plugin;
     private final ExampleLoopedConfig config;
-
     public Banking(ExampleLoopedPlugin plugin, ExampleLoopedConfig config) {
         this.plugin = plugin;
         this.config = config;
@@ -60,14 +59,10 @@ public class Banking implements Task {
 
         plugin.status = "Banking...";
 
-        if (Inventory.contains(Constants.WRATH_RUNE)) {
-            Bank.depositAll(Constants.WRATH_RUNE);
-            // Update bank count after depositing
-            updateBankWrathRuneCount();
+        if(Inventory.contains(Constants.WRATH_RUNE)) {
+            Bank.depositAllExcept(Constants.COLOSSAL_POUCH, Constants.MYTHICAL_CAPE);
             return -1;
         }
-
-        // Update bank wrath rune count
         updateBankWrathRuneCount();
 
         if (plugin.needsPOHRestore) {
@@ -89,7 +84,11 @@ public class Banking implements Task {
                 log.info("Withdrawing Pure Essence... (Free slots: " + Inventory.getFreeSlots() + ")");
                 plugin.status = "Withdrawing Pure Essence...";
                 Bank.withdrawAll(Constants.PURE_ESSENCE);
-                return 200;
+                if(plugin.colossalPouchQuantity < 40) {
+                    Bank.Inventory.getFirst(Constants.COLOSSAL_POUCH).interact("Fill");
+                    return -1;
+                }
+                return -1;
             }
         }
         if (Inventory.contains(Constants.PURE_ESSENCE) && plugin.colossalPouchQuantity < 40) {

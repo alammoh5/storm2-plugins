@@ -5,6 +5,7 @@ import net.storm.api.domain.tiles.ITileObject;
 import net.storm.api.plugins.Task;
 import net.storm.plugins.examples.looped.ExampleLoopedPlugin;
 import net.storm.plugins.examples.looped.misc.Constants;
+import net.storm.sdk.entities.Players;
 import net.storm.sdk.entities.TileObjects;
 import net.storm.sdk.items.Inventory;
 import net.storm.sdk.movement.Movement;
@@ -56,8 +57,10 @@ public class TravelToAltar implements Task {
         if (statue != null && statue.isInteractable()) {
             plugin.status = "Entering statue cave";
             log.info("Entering Mythic Statue");
-            statue.interact("Enter");            
-            return 1800;
+            if(!Players.getLocal().isMoving() || !Players.getLocal().isAnimating()) {
+                statue.interact("Enter"); 
+            }           
+            return -1;
         }
         if (fountain != null && !caveExit.isInteractable()) {
             plugin.status = "Walking to cave";
@@ -67,7 +70,7 @@ public class TravelToAltar implements Task {
         }
 
         if (caveExit != null && caveExit.isInteractable()) {
-            if (!Movement.isWalking()) {
+            if (!Players.getLocal().isMoving()) {
                 plugin.status = "Exiting cave";
                 log.info("Exiting cave");
                 caveExit.interact("Enter");
@@ -78,7 +81,7 @@ public class TravelToAltar implements Task {
         }
 
         if (wrathAltarRuins != null && wrathAltarRuins.isInteractable()) {
-            if (!Movement.isWalking()) {
+            if (!Players.getLocal().isMoving()) {
                 plugin.status = "Entering altar ruins";
                 log.info("Entering Wrath altar ruins");
                 wrathAltarRuins.interact("Enter");

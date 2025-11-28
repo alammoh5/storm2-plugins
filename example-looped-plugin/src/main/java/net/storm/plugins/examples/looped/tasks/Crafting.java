@@ -6,6 +6,7 @@ import net.storm.api.domain.tiles.ITileObject;
 import net.storm.api.plugins.Task;
 import net.storm.plugins.examples.looped.ExampleLoopedPlugin;
 import net.storm.plugins.examples.looped.misc.Constants;
+import net.storm.sdk.entities.Players;
 import net.storm.sdk.entities.TileObjects;
 import net.storm.sdk.game.Vars;
 import net.storm.sdk.items.Inventory;
@@ -38,7 +39,7 @@ public class Crafting implements Task {
             return -1;
         }
 
-        if (Inventory.contains(Constants.PURE_ESSENCE)) {
+        if (Inventory.contains(Constants.PURE_ESSENCE) && (!Players.getLocal().isMoving() && !Players.getLocal().isAnimating() && Players.getLocal().isIdle())) {
             plugin.status = "Crafting runes... (Pouch: " + plugin.colossalPouchQuantity + "/40)";
             log.info("Crafting essence in inventory");
             wrathAltar.interact("Craft-rune");
