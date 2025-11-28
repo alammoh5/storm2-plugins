@@ -51,6 +51,7 @@ public class Crafting implements Task {
             var colossalPouch = Inventory.getFirst(Constants.COLOSSAL_POUCH);
             if (colossalPouch != null) {
                 colossalPouch.interact("Empty");
+                wrathAltar.interact("Craft-rune");
                 return -1;
             }
         }
