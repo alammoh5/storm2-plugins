@@ -84,7 +84,7 @@ public class Banking implements Task {
                 log.info("Withdrawing Pure Essence... (Free slots: " + Inventory.getFreeSlots() + ")");
                 plugin.status = "Withdrawing Pure Essence...";
                 Bank.withdrawAll(Constants.PURE_ESSENCE);
-                if(plugin.colossalPouchQuantity < 40) {
+                if(plugin.colossalPouchQuantity < 40 && config.use1TickBank()) {
                     Bank.Inventory.getFirst(Constants.COLOSSAL_POUCH).interact("Fill");
                     return -1;
                 }
@@ -104,7 +104,7 @@ public class Banking implements Task {
         Bank.close();
         plugin.status = "Banking complete...";
         plugin.bankingComplete = true;
-        return -1;
+        return 200;
     }
 
     private void withdrawItem(int itemId, int amount) {

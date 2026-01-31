@@ -5,6 +5,8 @@ enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 include(
     "example-looped-plugin",
     "example-task-plugin",
+    "gilded-altar-plugin",
+    "auto-construction-plugin",
 )
 
 for (project in rootProject.children) {

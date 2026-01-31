@@ -57,7 +57,7 @@ public class TravelToAltar implements Task {
         if (statue != null && statue.isInteractable()) {
             plugin.status = "Entering statue cave";
             log.info("Entering Mythic Statue");
-            if(!Players.getLocal().isMoving() || !Players.getLocal().isAnimating()) {
+            if(!Players.getLocal().isMoving() && !Players.getLocal().isAnimating() && Players.getLocal().isIdle()) {
                 statue.interact("Enter"); 
             }           
             return -1;
@@ -66,11 +66,12 @@ public class TravelToAltar implements Task {
             plugin.status = "Walking to cave";
             log.info("Walking to cave");
             Movement.walkTo(Constants.CAVE_WALK_POINT);
-            return 1800;
+            return -1;
         }
 
         if (caveExit != null && caveExit.isInteractable()) {
-            if (!Players.getLocal().isMoving()) {
+            if (!plugin.clickedCaveExit) {
+                plugin.clickedCaveExit = true;
                 plugin.status = "Exiting cave";
                 log.info("Exiting cave");
                 caveExit.interact("Enter");
@@ -81,7 +82,7 @@ public class TravelToAltar implements Task {
         }
 
         if (wrathAltarRuins != null && wrathAltarRuins.isInteractable()) {
-            if (!Players.getLocal().isMoving()) {
+            if (!Players.getLocal().isMoving() && !Players.getLocal().isAnimating() && Players.getLocal().isIdle()) {
                 plugin.status = "Entering altar ruins";
                 log.info("Entering Wrath altar ruins");
                 wrathAltarRuins.interact("Enter");

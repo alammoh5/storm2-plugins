@@ -48,7 +48,7 @@ public final class Constants {
     public static final int POH_PORTAL_OUTSIDE = 15478;
     public static final int POH_PORTAL_INSIDE = 4525;
 
-    public static final WorldPoint CAVE_WALK_POINT = new WorldPoint(1933, 8982, 1);
+    public static final WorldPoint CAVE_WALK_POINT = new WorldPoint(1936, 8968, 1);
 
 
     private Constants() {

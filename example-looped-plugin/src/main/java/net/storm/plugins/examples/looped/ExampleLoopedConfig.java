@@ -55,4 +55,22 @@ public interface ExampleLoopedConfig extends Config {
     default String friendsPOHName() {
         return "";
     }
+
+    @ConfigItem(
+            keyName = "use1TickBank",
+            name = "Use 1 Tick Bank",
+            description = "Use 1 tick bank method for filling pouch"
+    )
+    default boolean use1TickBank() {
+        return false;
+    }
+
+    @ConfigItem(
+        keyName = "use1TickCraft",
+        name = "Use 1 Tick Craft",
+        description = "Use 1 tick craft method for crafting runes"
+    )
+    default boolean use1TickCraft() {
+        return false;
+    }
 }

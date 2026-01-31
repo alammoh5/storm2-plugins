@@ -34,6 +34,7 @@ public class ExampleLoopedPlugin extends TaskPlugin {
     public boolean bankingComplete = false;
     public boolean needsPOHRestore = false;
     public int colossalPouchQuantity = 0;
+    public boolean clickedCaveExit = false;
 
     public int totalXpGained = 0;
     public int totalWrathRunesCrafted = 0;
@@ -66,7 +67,7 @@ public class ExampleLoopedPlugin extends TaskPlugin {
                 new Banking(this, config),
                 new POHRestore(this, config),
                 new TravelToAltar(this),
-                new Crafting(this),
+                new Crafting(this, config),
                 new ReturnToBank(this)
         };
     }

@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Varbits;
 import net.storm.api.domain.tiles.ITileObject;
 import net.storm.api.plugins.Task;
+import net.storm.plugins.examples.looped.ExampleLoopedConfig;
 import net.storm.plugins.examples.looped.ExampleLoopedPlugin;
 import net.storm.plugins.examples.looped.misc.Constants;
 import net.storm.sdk.entities.Players;
@@ -15,9 +16,10 @@ import net.storm.sdk.items.Inventory;
 public class Crafting implements Task {
 
     private final ExampleLoopedPlugin plugin;
-
-    public Crafting(ExampleLoopedPlugin plugin) {
+    private final ExampleLoopedConfig config;
+    public Crafting(ExampleLoopedPlugin plugin, ExampleLoopedConfig config) {
         this.plugin = plugin;
+        this.config = config;
     }
 
     @Override
@@ -30,6 +32,7 @@ public class Crafting implements Task {
 
     @Override
     public int execute() {
+        plugin.clickedCaveExit = false;
         plugin.colossalPouchQuantity = Vars.getBit(Varbits.ESSENCE_POUCH_COLOSSAL_AMOUNT);
 
         ITileObject wrathAltar = TileObjects.getNearest(Constants.ALTAR);
@@ -38,8 +41,13 @@ public class Crafting implements Task {
             log.info("Altar not found");
             return -1;
         }
-
-        if (Inventory.contains(Constants.PURE_ESSENCE) && (!Players.getLocal().isMoving() && !Players.getLocal().isAnimating() && Players.getLocal().isIdle())) {
+        if (Inventory.contains(Constants.PURE_ESSENCE)) {
+            if(( Players.getLocal().isAnimating() || !Players.getLocal().isIdle()) && config.use1TickCraft()) {
+                return -1;
+            }
+            if(Players.getLocal().isMoving() && wrathAltar.getWorldLocation().distanceTo(Players.getLocal().getWorldLocation()) > 2) {
+                return -1;
+            }
             plugin.status = "Crafting runes... (Pouch: " + plugin.colossalPouchQuantity + "/40)";
             log.info("Crafting essence in inventory");
             wrathAltar.interact("Craft-rune");
@@ -52,7 +60,9 @@ public class Crafting implements Task {
             var colossalPouch = Inventory.getFirst(Constants.COLOSSAL_POUCH);
             if (colossalPouch != null) {
                 colossalPouch.interact("Empty");
-                wrathAltar.interact("Craft-rune");
+                if(config.use1TickCraft()){
+                    wrathAltar.interact("Craft-rune");
+                }
                 return -1;
             }
         }
