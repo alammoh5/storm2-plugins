@@ -9,12 +9,10 @@ import java.awt.*;
 
 public class AutoConstructionOverlay extends OverlayPanel {
     private final AutoConstructionPlugin plugin;
-    private final AutoConstructionConfig config;
 
     @Inject
     public AutoConstructionOverlay(AutoConstructionPlugin plugin, AutoConstructionConfig config) {
         this.plugin = plugin;
-        this.config = config;
     }
 
     @Override
