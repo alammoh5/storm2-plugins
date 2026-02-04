@@ -25,6 +25,24 @@ import net.storm.sdk.widgets.Dialog;
 import net.storm.sdk.widgets.Tabs;
 
 
+/*
+
+FLOW
+
+From Wiki:
+Start with 12 planks and 1 built bench.
+Call servant and send the Demon Butler to bring 24 Mahogany Planks from your bank.
+On the next tick, click to remove the built bench.
+On the next tick, click to build on the other empty hotspot.
+Every time you build a bench, repeat steps 3 and 4 until you run out of planks.
+The Demon Butler will return and restock your planks.
+Remove and build one bench using the new supplies before returning to step 2.
+
+Code Flow:
+CALL_BUTLER -> CALL_BUTLER_WAIT ->  REMOVE_BENCH_1 -> REMOVE_BENCH_1_WAIT ->  BUILD_BENCH_2 -> BUILD_BENCH_2_WAIT (Planks: 12 -> 6) -> REMOVE_BENCH_2 -> REMOVE_BENCH_2_WAIT ->  BUILD_BENCH_1 -> BUILD_BENCH_1_WAIT (Planks: 6 -> 0) -> REMOVE_BENCH_1 -> REMOVE_BENCH_1_WAIT -> WAIT_FOR_BUTLER_RESTOCK (Planks: 0 -> 24) -> BUILD_BENCH_2 -> BUILD_BENCH_2_WAIT (Planks: 24 -> 18) ->REMOVE_BENCH_2 -> REMOVE_BENCH_2_WAIT ->  BUILD_BENCH_1 -> BUILD_BENCH_1_WAIT (Planks: 18 -> 12) REPEAT
+
+*/
+
 
 @Slf4j
 @PluginDescriptor(name = "Auto Construction")
@@ -77,12 +95,15 @@ public class AutoConstructionPlugin extends LoopedPlugin {
         if(callServantWidget == null) {
             if(houseOptionsWidget == null) {
                 status = "Opening options tab...";
+                log.info("Opening options tab");
                 return 50;
             }
             status = "Opening house options...";
             houseOptionsWidget.click();
+            log.info("Opening house options");
         }
         status = "Calling servant to fetch planks...";
+        log.info("Calling servant to fetch planks");
         callServantWidget.interact("Call Servant");
         return -1;
     }
@@ -90,23 +111,21 @@ public class AutoConstructionPlugin extends LoopedPlugin {
 // Enum for FSM states
 private enum State {
     CALL_BUTLER,
+    CALL_BUTLER_WAIT,
     REMOVE_BENCH_1,
-    WAIT_REMOVE_1_DIALOG,
+    REMOVE_BENCH_1_WAIT,
     BUILD_BENCH_2,
-    WAIT_BUILD_2_WIDGET,
+    BUILD_BENCH_2_WAIT,
     REMOVE_BENCH_2,
-    WAIT_REMOVE_2_DIALOG,
+    REMOVE_BENCH_2_WAIT,
     BUILD_BENCH_1,
-    WAIT_BUILD_1_WIDGET,
-    BUILD_SINGLE,
-    WAIT_BUILD_SINGLE_WIDGET,
-    WAIT
+    BUILD_BENCH_1_WAIT,
+    WAIT_FOR_BUTLER_RESTOCK,
+    ERROR
 }
 
 // State variables
 private State currentState = State.CALL_BUTLER;
-private boolean bench1Built = true;
-private boolean bench2Built = false;
 
 @Override
 public int loop() {
@@ -114,35 +133,14 @@ public int loop() {
     ITileObject bench2Unbuilt = TileObjects.getNearest(Constants.BENCH_SPOT_2_POINT, Constants.BENCH_SPOT_2_UNBUILT);
     ITileObject bench1BuiltObj = TileObjects.getNearest(Constants.BENCH_SPOT_1_POINT, Constants.BENCH_SPOT_1_BUILT);
     ITileObject bench2BuiltObj = TileObjects.getNearest(Constants.BENCH_SPOT_2_POINT, Constants.BENCH_SPOT_2_BUILT);
+    boolean bench1Built = bench1BuiltObj != null && bench1BuiltObj.isInteractable();
+    boolean bench2Built = bench2BuiltObj != null && bench2BuiltObj.isInteractable();
     IPlayer local = Players.getLocal();
+
+    log.info("Current state: " + currentState);
     
     if (local.isMoving()) {
         return -1;
-    }
-    
-    // Handle all dialogs - both butler and remove confirmations
-    if (Dialog.isOpen()) {
-        if (Dialog.canContinue()) {
-            // This is the butler returning with planks
-            status = "Receiving planks from butler...";
-            Dialog.continueSpace();
-            butlerCalled = false;
-            currentState = State.WAIT;
-            return -1;  // Next tick
-        }
-        // This is the remove confirmation dialog
-        status = "Confirming dialog...";
-        Dialog.chooseOption(1);
-        
-        // Transition based on which remove we're waiting for
-        if (currentState == State.WAIT_REMOVE_1_DIALOG) {
-            bench1Built = false;
-            currentState = State.BUILD_BENCH_2;
-        } else if (currentState == State.WAIT_REMOVE_2_DIALOG) {
-            bench2Built = false;
-            currentState = State.BUILD_BENCH_1;
-        }
-        return 50;
     }
     
     // Count current planks
@@ -152,136 +150,185 @@ public int loop() {
         
         case CALL_BUTLER:
             status = "Calling butler for planks...";
+            log.info("Calling butler for planks");
             int result = callServant();
             if (result == -1) {  // Successfully called
                 butlerCalled = true;
-                currentState = State.REMOVE_BENCH_1;
+                currentState = State.CALL_BUTLER_WAIT;
                 return -1;  // Next tick
             }
-            return result;  // Still opening menus
+            return 10;  // Still opening menus
         
         case REMOVE_BENCH_1:
             status = "Removing bench 1...";
+            log.info("Removing bench 1");
             if (removeBench(bench1BuiltObj)) {
-                currentState = State.WAIT_REMOVE_1_DIALOG;
+                currentState = State.REMOVE_BENCH_1_WAIT;
                 return -1;  // Next tick for dialog to appear
             }
-            return 50;  // Retry
-        
-        case WAIT_REMOVE_1_DIALOG:
-            // Waiting for dialog to open (handled above)
-            return 50;
+            return 10;  // Retry
         
         case BUILD_BENCH_2:
             status = "Building bench 2...";
+            log.info("Building bench 2");
             if (buildBench(bench2Unbuilt)) {
-                currentState = State.WAIT_BUILD_2_WIDGET;
+                currentState = State.BUILD_BENCH_2_WAIT;
                 return -1;  // Next tick for widget to appear
             }
-            return 50;  // Retry
+            return 10;  // Retry
         
-        case WAIT_BUILD_2_WIDGET:
+        case BUILD_BENCH_2_WAIT:
+            log.info("Building bench 2 wait");
             var buildWidget2 = Widgets.get(458, 5);
             if (buildWidget2 != null && buildWidget2.hasAction("Build")) {
                 status = "Building from widget...";
                 log.info("Building mahogany bench from widget");
                 buildWidget2.interact("Build");
                 totalBenchesBuilt++;
-                bench2Built = true;
                 
-                // After building, check if we have planks for next cycle
-                if (planks - 6 >= 6) {  // Will have 6+ after this build
-                    currentState = State.REMOVE_BENCH_2;
-                } else {
-                    // Out of planks after this - butler should be returning
-                    currentState = State.REMOVE_BENCH_1;
-                }
+                // After building bench 2, always go to REMOVE_BENCH_2
+                // Flow: BUILD_BENCH_2_WAIT (12->6 or 24->18) -> REMOVE_BENCH_2
+                currentState = State.REMOVE_BENCH_2;
                 return -1;  // Next tick
             }
-            return 50;  // Wait for widget
+            return 10;  // Wait for widget
         
         case REMOVE_BENCH_2:
             status = "Removing bench 2...";
+            log.info("Removing bench 2");
             if (removeBench(bench2BuiltObj)) {
-                currentState = State.WAIT_REMOVE_2_DIALOG;
-                return -1;  // Next tick for dialog to appear
+                currentState = State.REMOVE_BENCH_2_WAIT;
+                return 300;  // Wait 300ms for dialog to appear
             }
-            return 50;  // Retry
-        
-        case WAIT_REMOVE_2_DIALOG:
-            // Waiting for dialog to open (handled above)
-            return 50;
+            return 10;  // Retry
         
         case BUILD_BENCH_1:
             status = "Building bench 1...";
+            log.info("Building bench 1");
             if (buildBench(bench1Unbuilt)) {
-                currentState = State.WAIT_BUILD_1_WIDGET;
+                currentState = State.BUILD_BENCH_1_WAIT;
                 return -1;  // Next tick for widget to appear
             }
-            return 50;  // Retry
+            return 10;  // Retry
         
-        case WAIT_BUILD_1_WIDGET:
+        case BUILD_BENCH_1_WAIT:
+            log.info("Building bench 1 wait");
             var buildWidget1 = Widgets.get(458, 5);
             if (buildWidget1 != null && buildWidget1.hasAction("Build")) {
                 status = "Building from widget...";
                 log.info("Building mahogany bench from widget");
                 buildWidget1.interact("Build");
                 totalBenchesBuilt++;
-                bench1Built = true;
                 
                 // After building, check if we have planks for next cycle
-                if (planks - 6 >= 6) {  // Will have 6+ after this build
+                if (planks <= 6) {
                     currentState = State.REMOVE_BENCH_1;
                 } else {
-                    // Out of planks - butler should arrive soon
+                    // Call butler to go grab more planks
+                    currentState = State.CALL_BUTLER;
+                }
+                return -1;  // Building takes 5 ticks
+            }
+            return 10;  // Wait for widget
+        
+        case WAIT_FOR_BUTLER_RESTOCK:
+            status = "Waiting for butler to return with planks...";
+            log.info("Waiting for butler to return with planks");
+            if (Dialog.isOpen()) {
+                if (Dialog.canContinue()) {
+                    // This is the butler returning with planks (0 -> 24)
+                    status = "Receiving planks from butler...";
+                    log.info("Receiving planks from butler");
+                    Dialog.continueSpace();
+                    butlerCalled = false;
+                    // After receiving planks, go to BUILD_BENCH_2 (24 -> 18)
+                    currentState = State.BUILD_BENCH_2;
+                    return 10;  // continue immediately
+                }
+                else{
+                    status = "WAIT_FOR_BUTLER_RESTOCK DIALOG ERROR";
+                    log.info("WAIT_FOR_BUTLER_RESTOCK DIALOG ERROR");
+                    currentState = State.ERROR;
+                    return 10;
+                }
+            }
+            return 10;
+
+ 
+        case CALL_BUTLER_WAIT:
+            status = "Waiting for butler to come...";
+            log.info("Waiting for butler to come");
+            if (Dialog.isOpen()) {
+                if (!Dialog.canContinue()) {
+                    status = "Butler came";
+                    log.info("Butler came");
+                    status = "Sending butler to fetch 24 planks";
+                    log.info("Sending butler to fetch 24 planks");
+                    Dialog.chooseOption(1);
                     currentState = State.REMOVE_BENCH_1;
+                    return 10;  // continue immediately
                 }
-                return -1;  // Next tick
+                else{
+                    status = "CALL_BUTLER_WAIT DIALOG ERROR";
+                    log.info("CALL_BUTLER_WAIT DIALOG ERROR");
+                    currentState = State.ERROR;
+                    return 10;
+                }
             }
-            return 50;  // Wait for widget
-        
-        case BUILD_SINGLE:
-            status = "Building single bench after butler...";
-            // Build on whichever hotspot is empty
-            if (!bench1Built) {
-                if (buildBench(bench1Unbuilt)) {
-                    currentState = State.WAIT_BUILD_SINGLE_WIDGET;
-                    return -1;  // Next tick for widget
+            return 10;
+
+        case REMOVE_BENCH_1_WAIT:
+            status = "Waiting for dialog to open...";
+            log.info("Waiting for dialog to open");
+            if (Dialog.isOpen()) {
+                if (!Dialog.canContinue()) {
+                    status = "Bench 1 Dialog opened";
+                    log.info("Bench 1 Dialog opened");
+                    Dialog.chooseOption(1);
+                    
+                    // Check plank count to determine next state
+                    // If planks are 0, we need to wait for butler to return
+                    // Otherwise, continue to BUILD_BENCH_2
+                    if (planks == 0) {
+                        currentState = State.WAIT_FOR_BUTLER_RESTOCK;
+                    } else {
+                        currentState = State.BUILD_BENCH_2;
+                    }
+                    return -1;  // next tick
                 }
-            } else if (!bench2Built) {
-                if (buildBench(bench2Unbuilt)) {
-                    currentState = State.WAIT_BUILD_SINGLE_WIDGET;
-                    return -1;  // Next tick for widget
+                else{
+                    status = "REMOVE_BENCH_1_WAIT DIALOG ERROR";
+                    log.info("REMOVE_BENCH_1_WAIT DIALOG ERROR");
+                    currentState = State.ERROR;
+                    return 10;
                 }
-            } else {
-                // Both built (shouldn't happen) - default to remove bench 1
-                currentState = State.REMOVE_BENCH_1;
-                return -1;  // Next tick
             }
-            return 50;  // Retry
-        
-        case WAIT_BUILD_SINGLE_WIDGET:
-            var buildWidgetSingle = Widgets.get(458, 5);
-            if (buildWidgetSingle != null && buildWidgetSingle.hasAction("Build")) {
-                status = "Building from widget...";
-                log.info("Building mahogany bench from widget");
-                buildWidgetSingle.interact("Build");
-                totalBenchesBuilt++;
-                
-                // Update which bench was built
-                if (!bench1Built) {
-                    bench1Built = true;
-                } else {
-                    bench2Built = true;
+            return 10;
+
+        case REMOVE_BENCH_2_WAIT:
+            status = "Waiting for dialog to open...";
+            log.info("Waiting for dialog to open");
+            if (Dialog.isOpen()) {
+                if (!Dialog.canContinue()) {
+                    status = "Bench 2 Dialog opened";
+                    log.info("Bench 2 Dialog opened");
+                    Dialog.chooseOption(1);
+                    currentState = State.BUILD_BENCH_1;
+                    return -1;  // next tick
                 }
-                
-                currentState = State.REMOVE_BENCH_1;
-                return -1;  // Next tick
+                else{
+                    status = "REMOVE_BENCH_2_WAIT DIALOG ERROR";
+                    log.info("REMOVE_BENCH_2_WAIT DIALOG ERROR");
+                    currentState = State.ERROR;
+                    return 10;
+                }
             }
-            return 50;  // Wait for widget
+            return 50;
+
         
         default:
             status = "Unknown state!";
+            log.info("Unknown state!");
             return -1;  // Next tick
     }
 }
@@ -289,6 +336,7 @@ public int loop() {
 private boolean removeBench(ITileObject bench) {
     if (bench != null && bench.isInteractable()) {
         bench.interact("Remove");
+        log.info("Removing bench");
         return true;
     }
     return false;    
@@ -298,84 +346,14 @@ private boolean removeBench(ITileObject bench) {
 private boolean buildBench(ITileObject bench) {
     if (bench != null && bench.isInteractable()) {
         bench.interact("Build");
+        log.info("Building bench");
         return true;
     }
     return false;    
 }
     
 
-    // @Override
-    // public int loop() {
-    //     if (isPaused) {
-    //         status = "Paused...";
-    //         return 1000;
-    //     }
-
-    //     IPlayer local = Players.getLocal();
-    //     ITileObject bench1Unbuilt = TileObjects.getNearest(Constants.BENCH_SPOT_1_POINT, Constants.BENCH_SPOT_1_UNBUILT);
-    //     ITileObject bench2Unbuilt = TileObjects.getNearest(Constants.BENCH_SPOT_2_POINT, Constants.BENCH_SPOT_2_UNBUILT);
-    //     ITileObject bench1Built = TileObjects.getNearest(Constants.BENCH_SPOT_1_POINT, Constants.BENCH_SPOT_1_BUILT);
-    //     ITileObject bench2Built = TileObjects.getNearest(Constants.BENCH_SPOT_2_POINT, Constants.BENCH_SPOT_2_BUILT);
-        // var buildWidget = Widgets.get(458, 5);
-
-    //     if (local == null) {
-    //         return 1000;
-    //     }
-
-    //     if (startingConstructionXp == -1) {
-    //         startingConstructionXp = Skills.getExperience(Skill.CONSTRUCTION);
-    //     }
-
-    //     int currentXp = Skills.getExperience(Skill.CONSTRUCTION);
-    //     totalXpGained = currentXp - startingConstructionXp;
-
-    //     int currentPlankCount = Inventory.getCount(true, "Mahogany plank");
-    //     log.info("Current plank count: " + currentPlankCount);
-
-    //     if(Dialog.isOpen()) {
-    //         if(Dialog.canContinue()) {
-    //             // this is when the demon butler hands you the 24 planks
-    //             Dialog.continueSpace();
-    //             butlerCalled = false;
-    //             return -1;
-    //         }
-    //         // this is the option selected on the chat dialog to remove the bench from bench1Built.interact("Remove");
-    //         Dialog.chooseOption(1);
-    //         return 50;
-    //     }
-    //     if (currentPlankCount <= 12 && !butlerCalled) {
-    //         butlerCalled = true;
-    //         return callServant();
-    //     }
-
-
-        // if (buildWidget != null && buildWidget.hasAction("Build")) {
-        //     // this is the widget that opens when you do bench1Unbuilt.interact("Build");
-        //     status = "Building from widget...";
-        //     log.info("Building mahogany bench from widget");
-        //     buildWidget.interact("Build");
-        //     totalBenchesBuilt++;
-        //     return -5;
-        // }
-
-    //     if(bench1Built != null && bench1Built.isInteractable()) {
-    //         // this will open the chat dialog to remove the bench
-    //         status = "Removing bench...";
-    //         log.info("Removing mahogany bench");
-    //         bench1Built.interact("Remove");
-    //         return -1;
-    //     }
-
-    //     if (bench1Unbuilt != null && bench1Unbuilt.isInteractable() && currentPlankCount >= 6) {
-    //         // this will open the build widget
-    //         status = "Building bench...";
-    //         log.info("Building mahogany bench");
-    //         bench1Unbuilt.interact("Build");
-    //         return -1;
-    //     }
-
-    //     return -1;
-    // }
+    
 
     @Subscribe
     private void onConfigChanged(ConfigChanged e) {
