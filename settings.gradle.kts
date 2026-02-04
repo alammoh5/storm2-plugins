@@ -7,6 +7,7 @@ include(
     "example-task-plugin",
     "gilded-altar-plugin",
     "auto-construction-plugin",
+    "auto-chompy-killer-plugin",
 )
 
 for (project in rootProject.children) {
