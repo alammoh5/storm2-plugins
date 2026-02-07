@@ -8,7 +8,7 @@ include(
     "gilded-altar-plugin",
     "auto-construction-plugin",
     "auto-chompy-killer-plugin",
-    "auto-shop-buyer-plugin",
+    "auto-item-user-plugin",
 )
 
 for (project in rootProject.children) {

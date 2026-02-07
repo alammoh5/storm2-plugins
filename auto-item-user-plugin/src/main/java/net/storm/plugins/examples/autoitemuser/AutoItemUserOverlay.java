@@ -1,4 +1,4 @@
-package net.storm.plugins.examples.autoshopbuyer;
+package net.storm.plugins.examples.autoitemuser;
 
 import com.google.inject.Inject;
 import net.runelite.client.ui.overlay.OverlayPanel;
@@ -7,11 +7,11 @@ import net.runelite.client.ui.overlay.components.TitleComponent;
 
 import java.awt.*;
 
-public class AutoShopBuyerOverlay extends OverlayPanel {
-    private final AutoShopBuyerPlugin plugin;
+public class AutoItemUserOverlay extends OverlayPanel {
+    private final AutoItemUserPlugin plugin;
 
     @Inject
-    public AutoShopBuyerOverlay(AutoShopBuyerPlugin plugin, AutoShopBuyerConfig config) {
+    public AutoItemUserOverlay(AutoItemUserPlugin plugin, AutoItemUserConfig config) {
         this.plugin = plugin;
     }
 
@@ -29,7 +29,7 @@ public class AutoShopBuyerOverlay extends OverlayPanel {
 
     private TitleComponent createTitleComponent() {
         return TitleComponent.builder()
-                .text("Auto Shop Buyer")
+                .text("Auto Item User")
                 .color(Color.CYAN)
                 .build();
     }

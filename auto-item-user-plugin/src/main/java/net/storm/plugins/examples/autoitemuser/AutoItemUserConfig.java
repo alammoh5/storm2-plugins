@@ -1,14 +1,14 @@
-package net.storm.plugins.examples.autoshopbuyer;
+package net.storm.plugins.examples.autoitemuser;
 
 import net.storm.api.plugins.SoxExclude;
 import net.storm.api.plugins.config.Config;
 import net.storm.api.plugins.config.ConfigGroup;
 import net.storm.api.plugins.config.ConfigItem;
 
-@ConfigGroup(AutoShopBuyerConfig.GROUP)
+@ConfigGroup(AutoItemUserConfig.GROUP)
 @SoxExclude
-public interface AutoShopBuyerConfig extends Config {
-    String GROUP = "auto-shop-buyer-plugin";
+public interface AutoItemUserConfig extends Config {
+    String GROUP = "auto-item-user-plugin";
 
     @ConfigItem(
             keyName = "npcName",
@@ -22,9 +22,17 @@ public interface AutoShopBuyerConfig extends Config {
     @ConfigItem(
             keyName = "itemName",
             name = "Item Name",
-            description = "Name of the item to buy"
+            description = "Item 1"
     )
     default String itemName() {
+        return "";
+    }
+    @ConfigItem(
+            keyName = "itemName2",
+            name = "Item Name 2",
+            description = "Item 2"
+    )
+    default String itemName2() {
         return "";
     }
 

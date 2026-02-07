@@ -1,4 +1,4 @@
-package net.storm.plugins.examples.autoshopbuyer;
+package net.storm.plugins.examples.autoitemuser;
 
 import com.google.inject.Inject;
 import com.google.inject.Provides;
@@ -11,22 +11,35 @@ import net.storm.api.events.ConfigChanged;
 import net.storm.api.plugins.PluginDescriptor;
 import net.storm.api.plugins.LoopedPlugin;
 import net.storm.api.plugins.config.ConfigManager;
+
+import java.security.SecureRandom;
+
 import org.pf4j.Extension;
+import net.storm.sdk.items.Inventory;
+import net.storm.api.domain.items.IInventoryItem;
 
 @Slf4j
-@PluginDescriptor(name = "Auto Shop Buyer")
+@PluginDescriptor(name = "Auto Item User")
 @Extension
-public class AutoShopBuyerPlugin extends LoopedPlugin {
+public class AutoItemUserPlugin extends LoopedPlugin {
+
+    private static final SecureRandom RNG = new SecureRandom();
 
     public String status = "Initializing...";
     public long startTime;
     public boolean isPaused;
 
+    public AutoItemUserPlugin(AutoItemUserConfig config) {
+        this.config = config;
+    }
+
+    private final AutoItemUserConfig config;
+
     @Inject
     private OverlayManager overlayManager;
 
     @Inject
-    private AutoShopBuyerOverlay overlay;
+    private AutoItemUserOverlay overlay;
 
     @Override
     public void startUp() {
@@ -40,6 +53,13 @@ public class AutoShopBuyerPlugin extends LoopedPlugin {
 
     @Override
     public int loop() {
+        IInventoryItem item1 = Inventory.getFirst(config.itemName());
+        IInventoryItem item2 = Inventory.getFirst(config.itemName2());
+
+        if(item1 != null && item2 != null){
+            item1.useOn(item2);
+            return 50 + RNG.nextInt(151);
+        }
         return -1;
     }
 
@@ -54,8 +74,8 @@ public class AutoShopBuyerPlugin extends LoopedPlugin {
     }
 
     @Provides
-    public AutoShopBuyerConfig provideConfig(ConfigManager configManager) {
-        return configManager.getConfig(AutoShopBuyerConfig.class);
+    public AutoItemUserConfig provideConfig(ConfigManager configManager) {
+        return configManager.getConfig(AutoItemUserConfig.class);
     }
 }
 

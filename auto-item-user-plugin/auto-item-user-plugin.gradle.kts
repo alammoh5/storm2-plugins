@@ -1,8 +1,8 @@
 version = "0.0.1"
 
-project.extra["PluginName"] = "Auto Shop Buyer"
+project.extra["PluginName"] = "Auto Item User"
 project.extra["PluginDescription"] =
-    "Automated shop buyer plugin"
+    "Automated item user plugin"
 
 tasks {
     jar {
