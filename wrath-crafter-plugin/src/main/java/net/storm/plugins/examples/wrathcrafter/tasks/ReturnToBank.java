@@ -1,18 +1,18 @@
-package net.storm.plugins.examples.looped.tasks;
+package net.storm.plugins.examples.wrathcrafter.tasks;
 
 import lombok.extern.slf4j.Slf4j;
 import net.storm.api.plugins.Task;
-import net.storm.plugins.examples.looped.ExampleLoopedPlugin;
-import net.storm.plugins.examples.looped.misc.Constants;
+import net.storm.plugins.examples.wrathcrafter.WrathCrafterPlugin;
+import net.storm.plugins.examples.wrathcrafter.misc.Constants;
 import net.storm.sdk.items.Equipment;
 import net.storm.sdk.items.Inventory;
 
 @Slf4j
 public class ReturnToBank implements Task {
 
-    private final ExampleLoopedPlugin plugin;
+    private final WrathCrafterPlugin plugin;
 
-    public ReturnToBank(ExampleLoopedPlugin plugin) {
+    public ReturnToBank(WrathCrafterPlugin plugin) {
         this.plugin = plugin;
     }
 

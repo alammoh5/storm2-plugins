@@ -1,4 +1,4 @@
-package net.storm.plugins.examples.looped;
+package net.storm.plugins.examples.wrathcrafter;
 
 import com.google.inject.Inject;
 import net.runelite.client.ui.overlay.OverlayPanel;
@@ -7,12 +7,12 @@ import net.runelite.client.ui.overlay.components.TitleComponent;
 
 import java.awt.*;
 
-public class ExampleLoopedOverlay extends OverlayPanel {
-    private final ExampleLoopedPlugin plugin;
-    private final ExampleLoopedConfig config;
+public class WrathCrafterOverlay extends OverlayPanel {
+    private final WrathCrafterPlugin plugin;
+    private final WrathCrafterConfig config;
 
     @Inject
-    public ExampleLoopedOverlay(ExampleLoopedPlugin plugin, ExampleLoopedConfig config) {
+    public WrathCrafterOverlay(WrathCrafterPlugin plugin, WrathCrafterConfig config) {
         this.plugin = plugin;
         this.config = config;
     }

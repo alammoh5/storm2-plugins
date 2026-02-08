@@ -1,12 +1,12 @@
-package net.storm.plugins.examples.looped.tasks;
+package net.storm.plugins.examples.wrathcrafter.tasks;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Varbits;
 import net.storm.api.domain.tiles.ITileObject;
 import net.storm.api.plugins.Task;
-import net.storm.plugins.examples.looped.ExampleLoopedConfig;
-import net.storm.plugins.examples.looped.ExampleLoopedPlugin;
-import net.storm.plugins.examples.looped.misc.Constants;
+import net.storm.plugins.examples.wrathcrafter.WrathCrafterConfig;
+import net.storm.plugins.examples.wrathcrafter.WrathCrafterPlugin;
+import net.storm.plugins.examples.wrathcrafter.misc.Constants;
 import net.storm.sdk.entities.Players;
 import net.storm.sdk.entities.TileObjects;
 import net.storm.sdk.game.Vars;
@@ -15,9 +15,9 @@ import net.storm.sdk.items.Inventory;
 @Slf4j
 public class Crafting implements Task {
 
-    private final ExampleLoopedPlugin plugin;
-    private final ExampleLoopedConfig config;
-    public Crafting(ExampleLoopedPlugin plugin, ExampleLoopedConfig config) {
+    private final WrathCrafterPlugin plugin;
+    private final WrathCrafterConfig config;
+    public Crafting(WrathCrafterPlugin plugin, WrathCrafterConfig config) {
         this.plugin = plugin;
         this.config = config;
     }

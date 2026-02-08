@@ -1,11 +1,11 @@
-package net.storm.plugins.examples.looped.tasks;
+package net.storm.plugins.examples.wrathcrafter.tasks;
 
 import net.storm.api.domain.tiles.ITileObject;
 import net.storm.api.magic.SpellBook;
 import net.storm.api.plugins.Task;
-import net.storm.plugins.examples.looped.ExampleLoopedConfig;
-import net.storm.plugins.examples.looped.ExampleLoopedPlugin;
-import net.storm.plugins.examples.looped.misc.Constants;
+import net.storm.plugins.examples.wrathcrafter.WrathCrafterConfig;
+import net.storm.plugins.examples.wrathcrafter.WrathCrafterPlugin;
+import net.storm.plugins.examples.wrathcrafter.misc.Constants;
 import net.storm.sdk.entities.TileObjects;
 import net.storm.sdk.items.Inventory;
 import net.storm.sdk.magic.Magic;
@@ -17,8 +17,8 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class POHRestore implements Task {
 
-    private final ExampleLoopedPlugin plugin;
-    private final ExampleLoopedConfig config;
+    private final WrathCrafterPlugin plugin;
+    private final WrathCrafterConfig config;
     
     private boolean enteredFriendHouse = false;
     private boolean waitingForDialog = false;
@@ -26,7 +26,7 @@ public class POHRestore implements Task {
     private long lastTeleportTime = 0;
     private int dialogAttempts = 0;
 
-    public POHRestore(ExampleLoopedPlugin plugin, ExampleLoopedConfig config) {
+    public POHRestore(WrathCrafterPlugin plugin, WrathCrafterConfig config) {
         this.plugin = plugin;
         this.config = config;
     }

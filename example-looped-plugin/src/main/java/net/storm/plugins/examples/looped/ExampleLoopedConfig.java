@@ -7,70 +7,43 @@ import net.storm.api.plugins.config.ConfigGroup;
 import net.storm.api.plugins.config.ConfigItem;
 
 @ConfigGroup(ExampleLoopedConfig.GROUP)
-@SoxExclude
+@SoxExclude // Exclude from obfuscation
 public interface ExampleLoopedConfig extends Config {
     String GROUP = "example-looped-plugin";
 
     @ConfigItem(
-            keyName = "minRunEnergy",
-            name = "Min Run Energy",
-            description = "Minimum run energy before restoring at POH"
+            keyName = "npcName",
+            name = "NPC Name",
+            description = "Name of the NPC to attack"
     )
-    default int minRunEnergy() {
-        return 30;
+    default String npcName() {
+        return "Goblin";
     }
 
     @ConfigItem(
-            keyName = "useColossalPouch",
-            name = "Use Colossal Pouch",
-            description = "Use colossal pouch for extra essence"
+            keyName = "eatFood",
+            name = "Eat Food?",
+            description = "Eat food when low hp?"
     )
-    default boolean useColossalPouch() {
+    default boolean eatFood() {
         return true;
     }
 
     @ConfigItem(
-            keyName = "pause",
-            name = "Pause",
-            description = "Pause the plugin"
+            keyName = "foodName",
+            name = "Food Name",
+            description = "Name of the food to eat"
     )
-    default boolean pause() {
-        return false;
+    default String foodName() {
+        return "Lobster";
     }
 
     @ConfigItem(
-            keyName = "wrathRunePrice",
-            name = "Wrath Rune Price",
-            description = "Price per wrath rune for GP calculations"
+            keyName = "foodHp",
+            name = "Food HP %",
+            description = "HP percentage to eat food at"
     )
-    default int wrathRunePrice() {
-        return 240;
-    }
-
-    @ConfigItem(
-            keyName = "friendsPOHName",
-            name = "Friend's POH Name",
-            description = "Name of friend to use their POH. Leave blank to use your own POH."
-    )
-    default String friendsPOHName() {
-        return "";
-    }
-
-    @ConfigItem(
-            keyName = "use1TickBank",
-            name = "Use 1 Tick Bank",
-            description = "Use 1 tick bank method for filling pouch"
-    )
-    default boolean use1TickBank() {
-        return false;
-    }
-
-    @ConfigItem(
-        keyName = "use1TickCraft",
-        name = "Use 1 Tick Craft",
-        description = "Use 1 tick craft method for crafting runes"
-    )
-    default boolean use1TickCraft() {
-        return false;
+    default int foodHp() {
+        return 50;
     }
 }

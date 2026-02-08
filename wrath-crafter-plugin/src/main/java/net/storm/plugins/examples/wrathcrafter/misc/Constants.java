@@ -1,4 +1,4 @@
-package net.storm.plugins.examples.looped.misc;
+package net.storm.plugins.examples.wrathcrafter.misc;
 
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.gameval.ItemID;
@@ -54,3 +54,4 @@ public final class Constants {
     private Constants() {
     }
 }
+
