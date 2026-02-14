@@ -9,6 +9,7 @@ include(
     "auto-construction-plugin",
     "auto-chompy-killer-plugin",
     "auto-item-user-plugin",
+    "dagannoth-kings-plugin",
 )
 
 for (project in rootProject.children) {
