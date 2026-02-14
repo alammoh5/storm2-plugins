@@ -11,15 +11,6 @@ public interface AutoItemUserConfig extends Config {
     String GROUP = "auto-item-user-plugin";
 
     @ConfigItem(
-            keyName = "npcName",
-            name = "NPC Name",
-            description = "Name of the NPC to buy from"
-    )
-    default String npcName() {
-        return "";
-    }
-
-    @ConfigItem(
             keyName = "itemName",
             name = "Item Name",
             description = "Item 1"
@@ -27,6 +18,7 @@ public interface AutoItemUserConfig extends Config {
     default String itemName() {
         return "";
     }
+
     @ConfigItem(
             keyName = "itemName2",
             name = "Item Name 2",
@@ -34,6 +26,24 @@ public interface AutoItemUserConfig extends Config {
     )
     default String itemName2() {
         return "";
+    }
+
+    @ConfigItem(
+            keyName = "minDelay",
+            name = "Min Delay",
+            description = "Minimum delay between uses (USE_DELAYS mode)"
+    )
+    default int minDelay() {
+        return 100;
+    }
+
+    @ConfigItem(
+            keyName = "maxDelay",
+            name = "Max Delay",
+            description = "Maximum delay between uses (USE_DELAYS mode)"
+    )
+    default int maxDelay() {
+        return 650;
     }
 
     @ConfigItem(
