@@ -80,6 +80,12 @@ public interface InfernoConfig extends Config {
     @ConfigItem(position = 5, keyName = "autoTogglePrayer", name = "Auto Toggle Prayer", description = "Automatically toggle the recommended protection prayer", section = PrayerSection)
     default boolean autoTogglePrayer() { return false; }
 
+    @ConfigItem(position = 6, keyName = "lazyFlick", name = "Lazy Flick", description = "Only enable prayer for the hit tick then turn off (saves prayer points)", section = PrayerSection)
+    default boolean lazyFlick() { return true; }
+
+    @ConfigItem(position = 7, keyName = "offensiveLazyFlick", name = "Offensive Lazy Flick", description = "Lazy flick best offensive prayer for range/magic attacks", section = PrayerSection)
+    default boolean offensiveLazyFlick() { return false; }
+
     @ConfigItem(position = 4, keyName = "safespotDisplayMode", name = "Tile Safespots", description = "Indicate safespots on the ground", section = SafespotsSection)
     default String safespotDisplayMode() { return "AREA"; }
 
@@ -256,6 +262,18 @@ public interface InfernoConfig extends Config {
 
     @ConfigItem(position = 3, keyName = "rangeGearIds", name = "Range gear IDs", description = "Comma-separated item IDs marked as range gear (right-click inventory item)", section = ExtraSection)
     default String rangeGearIds() { return ""; }
+
+    @ConfigItem(position = 4, keyName = "mageGearTrigger", name = "Mage gear triggers", description = "When any of these items are equipped, queue mage gear set (right-click: Add as Mage gear trigger)", section = ExtraSection)
+    default String mageGearTrigger() { return ""; }
+
+    @ConfigItem(position = 5, keyName = "rangeGearTrigger", name = "Range gear triggers", description = "When any of these items are equipped, queue range gear set (right-click: Add as Range gear trigger)", section = ExtraSection)
+    default String rangeGearTrigger() { return ""; }
+
+    @ConfigItem(position = 6, keyName = "maxEquipPerTick", name = "Max equip per tick", description = "Maximum gear swaps performed per game tick", section = ExtraSection)
+    default int maxEquipPerTick() { return 5; }
+
+    @ConfigItem(position = 7, keyName = "debug", name = "Debug overlay", description = "Show debug overlay with player animation", section = ExtraSection)
+    default boolean debug() { return false; }
 
     default InfernoPrayerDisplayMode getPrayerDisplayMode() {
         try { return InfernoPrayerDisplayMode.valueOf(prayerDisplayMode()); } catch (Exception e) { return InfernoPrayerDisplayMode.BOTH; }

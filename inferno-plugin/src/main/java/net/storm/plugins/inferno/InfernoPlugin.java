@@ -13,26 +13,36 @@ import java.util.stream.Collectors;
 import javax.inject.Inject;
 import lombok.AccessLevel;
 import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
+import net.runelite.api.EquipmentInventorySlot;
 import net.runelite.api.InventoryID;
 import net.runelite.api.MenuAction;
+import net.runelite.api.Item;
+import net.runelite.api.ItemContainer;
 import net.runelite.api.NPC;
 import net.runelite.api.NpcID;
+import net.runelite.api.VarPlayer;
 import net.runelite.api.Prayer;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.AnimationChanged;
 import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
+import net.runelite.api.events.InteractingChanged;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.MenuEntryAdded;
 import net.runelite.api.events.MenuOptionClicked;
+import net.runelite.api.events.HitsplatApplied;
 import net.runelite.api.events.NpcDespawned;
 import net.runelite.api.events.NpcSpawned;
 import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.game.ItemManager;
+import net.runelite.client.game.ItemStats;
 import net.runelite.client.ui.overlay.OverlayManager;
+import net.storm.api.Static;
 import net.storm.api.events.ConfigChanged;
 import net.storm.api.plugins.Plugin;
 import net.storm.api.plugins.PluginDescriptor;
@@ -41,12 +51,25 @@ import net.storm.plugins.inferno.displaymodes.InfernoPrayerDisplayMode;
 import net.storm.plugins.inferno.displaymodes.InfernoSafespotDisplayMode;
 import net.storm.plugins.inferno.displaymodes.InfernoWaveDisplayMode;
 import net.storm.plugins.inferno.displaymodes.InfernoZukShieldDisplayMode;
+import net.storm.api.magic.SpellBook;
+import net.storm.sdk.entities.NPCs;
+import net.storm.sdk.entities.Players;
 import net.storm.sdk.items.Equipment;
 import net.storm.sdk.items.Inventory;
+import net.storm.sdk.game.Combat;
+import net.storm.api.movement.pathfinder.LocalCollisionMap;
+import net.storm.sdk.movement.Movement;
 import net.storm.sdk.widgets.Prayers;
+import net.storm.api.util.WeaponStyle;
 import org.pf4j.Extension;
 
 import javax.inject.Singleton;
+
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 
 @Singleton
 @Getter(AccessLevel.PACKAGE)
@@ -57,10 +80,16 @@ import javax.inject.Singleton;
         description = "Inferno wave tracking, prayer recommendations, safespots, and Zuk timer assistance.",
         tags = {"inferno", "zuk", "jad", "tzhaar"}
 )
+@Slf4j
 public class InfernoPlugin extends Plugin {
 
     private static final int INFERNO_REGION = 9043;
     private static final int ZUK_MAX_HP = 1400;
+
+    private static final Set<Integer> NON_ATTACK_ANIMATIONS = Set.of(
+        397, 378, 388, 383, 403, 410, 415, 420, 424, 1666, 435, 1156, 1709, 2063, 1659,
+        829, 712, 713, 3170, 3872, 1816, 6293, 6294, 7118, 7672, 4411, 4413, 8316, 7198, 8975, 8979, 8970, 881, 8973
+    );
 
     @Inject
     private Client client;
@@ -78,10 +107,16 @@ public class InfernoPlugin extends Plugin {
     private InfernoInfoBoxOverlay jadOverlay;
 
     @Inject
+    private InfernoDebugOverlay debugOverlay;
+
+    @Inject
     private InfernoConfig config;
 
     @Inject
     private ConfigManager configManager;
+
+    @Inject
+    private ItemManager itemManager;
 
     private static final String MENU_MARK_MAGE = "Inferno: Mark as Mage gear";
     private static final String MENU_MARK_RANGE = "Inferno: Mark as Range gear";
@@ -96,6 +131,8 @@ public class InfernoPlugin extends Plugin {
 
     private WorldPoint lastLocation = new WorldPoint(0, 0, 0);
 
+    private boolean freezingNibblers = false;
+
     @Getter(AccessLevel.PACKAGE)
     private int currentWaveNumber = -1;
 
@@ -106,6 +143,40 @@ public class InfernoPlugin extends Plugin {
     private final Map<Integer, Map<InfernoNPC.Attack, Integer>> upcomingAttacks = new HashMap<>();
     @Getter(AccessLevel.PACKAGE)
     private InfernoNPC.Attack closestAttack = null;
+    @Getter(AccessLevel.PACKAGE)
+    private int closestAttackTick = 999;
+
+    private Prayer armedProtectionPrayer = null;
+    private boolean disablePrayerNextTick = false;
+
+    // #region agent log
+    private static final int HITSPLAT_DAMAGE_ME_CYAN = 18;
+    private static final int HITSPLAT_DAMAGE_ME_ORANGE = 20;
+    private static final int HITSPLAT_DAMAGE_ME_YELLOW = 22;
+    private static final Path WAVE_LOG_PATH = Paths.get("c:/Users/Alam/Documents/GitHub/storm2-plugins/.cursor/debug.log");
+
+    private static void waveLog(String event, String dataJson) {
+        try {
+            String json = "{\"event\":\"" + event + "\",\"data\":" + (dataJson != null ? dataJson : "{}") + ",\"timestamp\":" + System.currentTimeMillis() + "}";
+            Files.write(WAVE_LOG_PATH, (json + "\n").getBytes(StandardCharsets.UTF_8), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        } catch (Exception ignored) {}
+    }
+
+    private static InfernoNPC.Attack hitsplatTypeToAttack(int hitsplatType) {
+        if (hitsplatType == HITSPLAT_DAMAGE_ME_ORANGE) return InfernoNPC.Attack.MELEE;
+        if (hitsplatType == HITSPLAT_DAMAGE_ME_YELLOW) return InfernoNPC.Attack.RANGED;
+        if (hitsplatType == HITSPLAT_DAMAGE_ME_CYAN) return InfernoNPC.Attack.MAGIC;
+        return null;
+    }
+
+    private Map<Integer, Map<InfernoNPC.Attack, Integer>> lastUpcomingAttacks = new HashMap<>();
+    private InfernoNPC.Attack lastClosestAttack = null;
+    private int lastClosestAttackTick = 999;
+    // #endregion
+    private Prayer armedOffensivePrayer = null;
+    private int offensiveTicksSinceLastAttack = -1;
+    private boolean offensiveFirstAttackSeen = false;
+    private int lastOffensiveAnim = -1;
 
     @Getter(AccessLevel.PACKAGE)
     private final List<WorldPoint> obstacles = new ArrayList<>();
@@ -161,6 +232,7 @@ public class InfernoPlugin extends Plugin {
                 overlayManager.add(waveOverlay);
             }
             overlayManager.add(jadOverlay);
+            if (config.debug()) overlayManager.add(debugOverlay);
         }
     }
 
@@ -169,9 +241,11 @@ public class InfernoPlugin extends Plugin {
         overlayManager.remove(infernoOverlay);
         overlayManager.remove(waveOverlay);
         overlayManager.remove(jadOverlay);
+        overlayManager.remove(debugOverlay);
         spawnTimerInfoBox = null;
         currentWaveNumber = -1;
         pendingGearEquipIds.clear();
+        resetLazyFlickState();
     }
 
     @Subscribe
@@ -189,6 +263,11 @@ public class InfernoPlugin extends Plugin {
             if (isInInferno() && waveDisplayMode != InfernoWaveDisplayMode.NONE) {
                 overlayManager.add(waveOverlay);
             }
+        } else if ("debug".equals(event.getKey())) {
+            if (config.debug() && isInInferno()) overlayManager.add(debugOverlay);
+            else overlayManager.remove(debugOverlay);
+        } else if ("lazyFlick".equals(event.getKey()) || "autoTogglePrayer".equals(event.getKey()) || "offensiveLazyFlick".equals(event.getKey())) {
+            resetLazyFlickState();
         }
     }
 
@@ -196,14 +275,58 @@ public class InfernoPlugin extends Plugin {
     private void onGameTick(GameTick event) {
         if (!isInInferno()) return;
         lastTick = System.currentTimeMillis();
+        if (freezingNibblers) {
+            boolean nibblerFrozen = client.getLocalPlayer().getAnimation() == 10092;
+            if (nibblerFrozen) {
+                Prayers.toggle(getOffensivePrayerForCurrentStyle());
+                freezingNibblers = false;
+                // WorldPoint SAFE_SPOT_CORNER = WorldPoint.toLocalInstance(Static.getClient().getTopLevelWorldView(), new WorldPoint(2276, 5354, 0)).stream().findFirst().orElse(null);
+                // Movement.walkTo(SAFE_SPOT_CORNER, new LocalCollisionMap(true));
+
+                // WorldPoint START_TILE = WorldPoint.toLocalInstance(Static.getClient().getTopLevelWorldView(), new WorldPoint(2274, 5355, 0)).stream().findFirst().orElse(null);
+                // Movement.walkTo(START_TILE, new LocalCollisionMap(true));
+                // queueGearSet(parseGearIds(config.rangeGearIds()));
+            }
+        }
+        infernoNpcs.removeIf(InfernoNPC::isDead);
         obstacles.clear();
         calculateObstacles();
         upcomingAttacks.clear();
         calculateUpcomingAttacks();
         closestAttack = null;
+        closestAttackTick = 999;
         calculateClosestAttack();
-        if (config.autoTogglePrayer() && closestAttack != null && closestAttack.getPrayer() != null) {
-            toggleProtectionPrayer(closestAttack.getPrayer());
+        if (disablePrayerNextTick && armedProtectionPrayer != null) {
+            Prayer needTick0 = getPrayerForTick(0);
+            Prayer needThisTick = getPrayerForTick(1);
+            Prayer needNextTick = getPrayerForTick(2);
+            if (armedProtectionPrayer != needTick0 && armedProtectionPrayer != needThisTick && armedProtectionPrayer != needNextTick) {
+                if (Prayers.isEnabled(armedProtectionPrayer)) Prayers.toggle(armedProtectionPrayer);
+            }
+            resetProtectionFlickState();
+        }
+        if (config.autoTogglePrayer()) {
+            Prayer needed = closestAttack != null ? closestAttack.getPrayer() : null;
+            if (config.lazyFlick()) {
+                if ((closestAttackTick == 0 || closestAttackTick == 1) && needed != null) {
+                    if (!Prayers.isEnabled(needed)) {
+                        Prayers.toggle(needed);
+                        armedProtectionPrayer = needed;
+                        disablePrayerNextTick = true;
+                    }
+                } else {
+                    disableProtectionPrayers();
+                }
+            } else {
+                if (needed != null) {
+                    toggleProtectionPrayer(needed);
+                } else {
+                    disableAllActivePrayers();
+                }
+            }
+        }
+        if (config.offensiveLazyFlick()) {
+            processOffensiveLazyFlick();
         }
         safeSpotMap.clear();
         calculateSafespots();
@@ -219,6 +342,37 @@ public class InfernoPlugin extends Plugin {
         } else if (finalPhase) {
             ticksSinceFinalPhase++;
         }
+        lastUpcomingAttacks = new HashMap<>();
+        for (Map.Entry<Integer, Map<InfernoNPC.Attack, Integer>> e : upcomingAttacks.entrySet()) {
+            lastUpcomingAttacks.put(e.getKey(), new HashMap<>(e.getValue()));
+        }
+        lastClosestAttack = closestAttack;
+        lastClosestAttackTick = closestAttackTick;
+    }
+
+    @Subscribe
+    private void onHitsplatApplied(HitsplatApplied event) {
+        if (!isInInferno()) return;
+        if (event.getActor() != client.getLocalPlayer()) return;
+        var hitsplat = event.getHitsplat();
+        if (hitsplat.getAmount() <= 0) return;
+        int type = hitsplat.getHitsplatType();
+        InfernoNPC.Attack attackType = hitsplatTypeToAttack(type);
+        Prayer activePrayer = null;
+        if (Prayers.isEnabled(Prayer.PROTECT_FROM_MELEE)) activePrayer = Prayer.PROTECT_FROM_MELEE;
+        else if (Prayers.isEnabled(Prayer.PROTECT_FROM_MISSILES)) activePrayer = Prayer.PROTECT_FROM_MISSILES;
+        else if (Prayers.isEnabled(Prayer.PROTECT_FROM_MAGIC)) activePrayer = Prayer.PROTECT_FROM_MAGIC;
+        Prayer correctPrayer = attackType != null ? attackType.getPrayer() : null;
+        boolean wasCorrect = correctPrayer != null && correctPrayer == activePrayer;
+        Set<InfernoNPC.Attack> attacksAtTick1 = lastUpcomingAttacks.containsKey(1)
+            ? lastUpcomingAttacks.get(1).keySet() : Set.of();
+        boolean possiblyUnavoidable = attacksAtTick1.size() > 1;
+        waveLog("damage", "{\"wave\":" + currentWaveNumber + ",\"amount\":" + hitsplat.getAmount()
+            + ",\"hitsplatType\":" + type + ",\"attackType\":\"" + (attackType != null ? attackType : "?") + "\""
+            + ",\"activePrayer\":\"" + (activePrayer != null ? activePrayer : "none") + "\""
+            + ",\"correctPrayer\":\"" + (correctPrayer != null ? correctPrayer : "?") + "\""
+            + ",\"wasCorrect\":" + wasCorrect + ",\"possiblyUnavoidable\":" + possiblyUnavoidable
+            + ",\"attacksAtTick1\":" + attacksAtTick1 + ",\"lastClosestAttack\":\"" + lastClosestAttack + "\"}");
     }
 
     @Subscribe
@@ -232,8 +386,23 @@ public class InfernoPlugin extends Plugin {
         InfernoNPC.Type type = InfernoNPC.Type.typeFromId(npcId);
         if (type == null) return;
         switch (type) {
+            case NIBBLER:
+                if (!freezingNibblers && SpellBook.Ancient.ICE_BARRAGE.canCast() && Players.getLocal() != null && !Players.getLocal().isInteracting()) {
+                    var nibbler = NPCs.query().ids(net.runelite.api.NpcID.JALNIB).results().stream()
+                        .filter(n -> n.getWorldLocation().distanceTo(event.getNpc().getWorldLocation()) == 0)
+                        .findFirst().orElse(null);
+                    if (nibbler != null && nibbler.isInteractable()) {
+                        try {
+                            Prayers.toggle(getOffensivePrayerForCurrentStyle());
+                            SpellBook.Ancient.ICE_BARRAGE.castOn(nibbler);
+                            freezingNibblers = true;
+                        } catch (Throwable ignored) { }
+                    }
+                }
+                break;
             case BLOB:
                 infernoNpcs.add(new InfernoNPC(event.getNpc()));
+                waveLog("npc_spawn", "{\"wave\":" + currentWaveNumber + ",\"type\":\"" + type + "\",\"attack\":\"" + (type.getDefaultAttack() != null ? type.getDefaultAttack() : "UNKNOWN") + "\"}");
                 return;
             case MAGE:
                 if (zuk != null && spawnTimerInfoBox != null) {
@@ -265,6 +434,7 @@ public class InfernoPlugin extends Plugin {
                 break;
         }
         infernoNpcs.add(0, new InfernoNPC(event.getNpc()));
+        waveLog("npc_spawn", "{\"wave\":" + currentWaveNumber + ",\"type\":\"" + type + "\",\"attack\":\"" + (type.getDefaultAttack() != null ? type.getDefaultAttack() : "UNKNOWN") + "\"}");
     }
 
     @Subscribe
@@ -280,6 +450,15 @@ public class InfernoPlugin extends Plugin {
             spawnTimerInfoBox = null;
         }
         infernoNpcs.removeIf(infernoNPC -> infernoNPC.getNpc() == event.getNpc());
+    }
+
+    @Subscribe
+    private void onInteractingChanged(InteractingChanged event) {
+        if (!isInInferno() || !config.offensiveLazyFlick()) return;
+        if (event.getSource() != client.getLocalPlayer()) return;
+        if (event.getTarget() != null) return;
+        disableArmedOffensivePrayer();
+        resetOffensiveFlickState();
     }
 
     @Subscribe
@@ -319,6 +498,7 @@ public class InfernoPlugin extends Plugin {
             zukShield = null;
             zuk = null;
             spawnTimerInfoBox = null;
+            resetLazyFlickState();
         } else if (currentWaveNumber == -1) {
             InfernoWaveDisplayMode waveDisplayMode = InfernoConfigParsers.waveDisplayMode(config);
             infernoNpcs.clear();
@@ -328,6 +508,7 @@ public class InfernoPlugin extends Plugin {
             if (waveDisplayMode != InfernoWaveDisplayMode.NONE) {
                 overlayManager.add(waveOverlay);
             }
+            if (config.debug()) overlayManager.add(debugOverlay);
         }
     }
 
@@ -458,7 +639,6 @@ public class InfernoPlugin extends Plugin {
         return added.stream().mapToInt(Integer::intValue).toArray();
     }
 
-    private static final int MAX_EQUIP_PER_TICK = 2;
 
     private void queueGearSet(Set<Integer> gearIds) {
         pendingGearEquipIds.clear();
@@ -475,7 +655,7 @@ public class InfernoPlugin extends Plugin {
         }
         int equipAttempts = 0;
         for (int itemId : new ArrayList<>(pendingGearEquipIds)) {
-            if (equipAttempts >= MAX_EQUIP_PER_TICK) {
+            if (equipAttempts >= config.maxEquipPerTick()) {
                 break;
             }
             if (Equipment.contains(itemId)) {
@@ -517,12 +697,16 @@ public class InfernoPlugin extends Plugin {
         if (!isInInferno() || event.getType() != ChatMessageType.GAMEMESSAGE) return;
         String message = event.getMessage();
         if (message.contains("Wave completed!")) {
+            resetLazyFlickState();
             disableAllActivePrayers();
             equipMageGear();
+            WorldPoint START_TILE = WorldPoint.toLocalInstance(Static.getClient().getTopLevelWorldView(), new WorldPoint(2274, 5355, 0)).stream().findFirst().orElse(null);
+            Movement.walkTo(START_TILE, new LocalCollisionMap(true));
         }
         if (message.contains("Wave:")) {
             message = message.substring(message.indexOf(": ") + 2);
             currentWaveNumber = Integer.parseInt(message.substring(0, message.indexOf('<')));
+            waveLog("wave_start", "{\"wave\":" + currentWaveNumber + "}");
         }
     }
 
@@ -538,6 +722,21 @@ public class InfernoPlugin extends Plugin {
     private void calculateUpcomingAttacks() {
         var playerLoc = client.getLocalPlayer().getWorldLocation();
         for (InfernoNPC infernoNPC : infernoNpcs) {
+            if (infernoNPC.getType() == InfernoNPC.Type.BLOB
+                && infernoNPC.getTicksTillNextAttack() == 4
+                && config.autoTogglePrayer()
+                && !Prayers.isEnabled(Prayer.PROTECT_FROM_MAGIC)
+                && !Prayers.isEnabled(Prayer.PROTECT_FROM_MISSILES)
+                && isPrayerHelper(infernoNPC)) {
+                InfernoNPC.Attack bestSync = getHighestPriorityAttackAtTick(3);
+                if (bestSync == InfernoNPC.Attack.MAGIC) {
+                    Prayers.toggle(Prayer.PROTECT_FROM_MISSILES);
+                } else if (bestSync == InfernoNPC.Attack.RANGED) {
+                    Prayers.toggle(Prayer.PROTECT_FROM_MAGIC);
+                } else {
+                    Prayers.toggle(Prayer.PROTECT_FROM_MAGIC);
+                }
+            }
             infernoNPC.gameTick(client, lastLocation, finalPhase, ticksSinceFinalPhase);
             if (infernoNPC.getType() == InfernoNPC.Type.ZUK && zukShieldCornerTicks == -1) {
                 infernoNPC.updateNextAttack(InfernoNPC.Attack.UNKNOWN, 12);
@@ -545,7 +744,7 @@ public class InfernoPlugin extends Plugin {
             }
             if (infernoNPC.getTicksTillNextAttack() > 0 && isPrayerHelper(infernoNPC)
                 && (infernoNPC.getNextAttack() != InfernoNPC.Attack.UNKNOWN
-                || (config.indicateBlobDetectionTick() && infernoNPC.getType() == InfernoNPC.Type.BLOB && infernoNPC.getTicksTillNextAttack() >= 4))) {
+                || (config.indicateBlobDetectionTick() && infernoNPC.getType() == InfernoNPC.Type.BLOB && infernoNPC.getTicksTillNextAttack() >= 3))) {
                 upcomingAttacks.computeIfAbsent(infernoNPC.getTicksTillNextAttack(), k -> new HashMap<>());
                 if (config.indicateBlobDetectionTick() && infernoNPC.getType() == InfernoNPC.Type.BLOB && infernoNPC.getTicksTillNextAttack() >= 4) {
                     upcomingAttacks.computeIfAbsent(infernoNPC.getTicksTillNextAttack() - 3, k -> new HashMap<>());
@@ -588,15 +787,22 @@ public class InfernoPlugin extends Plugin {
     }
 
     private void addPreemptiveAttackForFirstHit(InfernoNPC infernoNPC, WorldPoint playerLoc) {
-        if (!isPreemptivePrayerCandidate(infernoNPC)) {
-            return;
-        }
         if (infernoNPC.getTicksTillNextAttack() > 0) {
             return;
         }
         if (!canThreatenPlayerTile(infernoNPC, playerLoc)) {
             return;
         }
+        if (infernoNPC.getType() == InfernoNPC.Type.BLOB) {
+            if (!isPrayerHelper(infernoNPC)) return;
+            addUpcomingAttack(1, InfernoNPC.Attack.MAGIC, infernoNPC.getType().getPriority());
+            addUpcomingAttack(1, InfernoNPC.Attack.RANGED, infernoNPC.getType().getPriority());
+            return;
+        }
+        if (!isPreemptivePrayerCandidate(infernoNPC)) {
+            return;
+        }
+        addUpcomingAttack(0, infernoNPC.getType().getDefaultAttack(), infernoNPC.getType().getPriority());
         addUpcomingAttack(1, infernoNPC.getType().getDefaultAttack(), infernoNPC.getType().getPriority());
     }
 
@@ -611,7 +817,27 @@ public class InfernoPlugin extends Plugin {
         return defaultAttack != null && defaultAttack.getPrayer() != null;
     }
 
+    private InfernoNPC.Attack getHighestPriorityAttackAtTick(int tick) {
+        Map<InfernoNPC.Attack, Integer> atTick = upcomingAttacks.get(tick);
+        if (atTick == null || atTick.isEmpty()) return null;
+        InfernoNPC.Attack best = null;
+        int bestPrio = 999;
+        for (Map.Entry<InfernoNPC.Attack, Integer> e : atTick.entrySet()) {
+            if (e.getKey() == InfernoNPC.Attack.MAGIC || e.getKey() == InfernoNPC.Attack.RANGED) {
+                if (e.getValue() < bestPrio) {
+                    best = e.getKey();
+                    bestPrio = e.getValue();
+                }
+            }
+        }
+        return best;
+    }
+
     private boolean canThreatenPlayerTile(InfernoNPC infernoNPC, WorldPoint playerLoc) {
+        InfernoNPC.Attack def = infernoNPC.getType().getDefaultAttack();
+        if (def == InfernoNPC.Attack.MELEE) {
+            return infernoNPC.canAttack(client, playerLoc);
+        }
         return infernoNPC.canAttack(client, playerLoc)
             || infernoNPC.canMoveToAttack(client, playerLoc, obstacles);
     }
@@ -625,6 +851,7 @@ public class InfernoPlugin extends Plugin {
     }
 
     private void calculateClosestAttack() {
+        closestAttackTick = 999;
         InfernoPrayerDisplayMode prayerDisplayMode = InfernoConfigParsers.prayerDisplayMode(config);
         if (prayerDisplayMode == InfernoPrayerDisplayMode.PRAYER_TAB || prayerDisplayMode == InfernoPrayerDisplayMode.BOTH) {
             int closestTick = 999;
@@ -639,6 +866,111 @@ public class InfernoPlugin extends Plugin {
                         closestTick = tick;
                     }
                 }
+            }
+            closestAttackTick = closestTick;
+        }
+    }
+
+    private Prayer getPrayerForTick(int tick) {
+        Map<InfernoNPC.Attack, Integer> attackPriority = upcomingAttacks.get(tick);
+        if (attackPriority == null || attackPriority.isEmpty()) return null;
+        InfernoNPC.Attack best = null;
+        int bestPriority = 999;
+        for (Map.Entry<InfernoNPC.Attack, Integer> e : attackPriority.entrySet()) {
+            if (e.getValue() < bestPriority) {
+                best = e.getKey();
+                bestPriority = e.getValue();
+            }
+        }
+        return best != null ? best.getPrayer() : null;
+    }
+
+    private Prayer getOffensivePrayerForCurrentStyle() {
+        WeaponStyle style = Combat.getCurrentWeaponStyle();
+        if (style == null) return null;
+        switch (style) {
+            case RANGE:
+                return Prayers.getBestRangeOffensive();
+            case MAGIC:
+                return Prayers.getBestMageOffensive();
+            default:
+                return null;
+        }
+    }
+
+    private int getOffensiveAttackSpeed() {
+        int weaponId = getEquippedWeaponId();
+        ItemStats stats = weaponId != -1 ? itemManager.getItemStats(weaponId) : null;
+        int base = (stats != null && stats.getEquipment() != null) ? stats.getEquipment().getAspeed() : 5;
+        WeaponStyle style = Combat.getCurrentWeaponStyle();
+        if (style == WeaponStyle.RANGE && client.getVarpValue(VarPlayer.ATTACK_STYLE) == 1) {
+            base = Math.max(2, base - 1);
+        }
+        return Math.max(2, Math.min(6, base));
+    }
+
+    private int getEquippedWeaponId() {
+        ItemContainer inv = client.getItemContainer(InventoryID.EQUIPMENT);
+        if (inv == null) return -1;
+        Item weapon = inv.getItem(EquipmentInventorySlot.WEAPON.getSlotIdx());
+        return weapon != null ? weapon.getId() : -1;
+    }
+
+    private boolean isPlayerAttackingNow() {
+        var player = client.getLocalPlayer();
+        if (player == null || !(player.getInteracting() instanceof NPC)) return false;
+        int anim = player.getAnimation();
+        if (anim == -1) return false;
+        if (NON_ATTACK_ANIMATIONS.contains(anim)) return false;
+        return true;
+    }
+
+    private boolean isInteractingWithNpc() {
+        var player = client.getLocalPlayer();
+        return player != null && player.getInteracting() instanceof NPC;
+    }
+
+    private void disableArmedOffensivePrayer() {
+        if (armedOffensivePrayer == null) return;
+        if (Prayers.isEnabled(armedOffensivePrayer)) Prayers.toggle(armedOffensivePrayer);
+    }
+
+    private void processOffensiveLazyFlick() {
+        boolean interacting = isInteractingWithNpc();
+        if (!interacting) {
+            disableArmedOffensivePrayer();
+            resetOffensiveFlickState();
+            return;
+        }
+        Prayer offensivePrayer = getOffensivePrayerForCurrentStyle();
+        if (offensivePrayer == null) return;
+
+        int attackSpeed = getOffensiveAttackSpeed();
+        boolean attackingNow = isPlayerAttackingNow();
+        int anim = client.getLocalPlayer() != null ? client.getLocalPlayer().getAnimation() : -1;
+        boolean newAttackTick = attackingNow && anim != lastOffensiveAnim;
+        if (attackingNow) lastOffensiveAnim = anim;
+        else lastOffensiveAnim = -1;
+        if (newAttackTick) {
+            disableArmedOffensivePrayer();
+            armedOffensivePrayer = null;
+            offensiveFirstAttackSeen = true;
+            offensiveTicksSinceLastAttack = 0;
+        } else {
+            if (offensiveTicksSinceLastAttack < 0) {
+                offensiveTicksSinceLastAttack = 0;
+            } else {
+                offensiveTicksSinceLastAttack++;
+            }
+            if (offensiveFirstAttackSeen && offensiveTicksSinceLastAttack == attackSpeed - 1) {
+                if (!Prayers.isEnabled(offensivePrayer)) {
+                    Prayers.toggle(offensivePrayer);
+                }
+                armedOffensivePrayer = offensivePrayer;
+            } else if (offensiveTicksSinceLastAttack == attackSpeed && armedOffensivePrayer != null) {
+                disableArmedOffensivePrayer();
+                armedOffensivePrayer = null;
+                offensiveTicksSinceLastAttack = 0;
             }
         }
     }
@@ -848,6 +1180,29 @@ public class InfernoPlugin extends Plugin {
         }
     }
 
+    private void resetProtectionFlickState() {
+        armedProtectionPrayer = null;
+        disablePrayerNextTick = false;
+    }
+
+    private void resetOffensiveFlickState() {
+        armedOffensivePrayer = null;
+        offensiveTicksSinceLastAttack = -1;
+        offensiveFirstAttackSeen = false;
+        lastOffensiveAnim = -1;
+    }
+
+    private void resetLazyFlickState() {
+        resetProtectionFlickState();
+        resetOffensiveFlickState();
+    }
+
+    private static void disableProtectionPrayers() {
+        for (Prayer p : new Prayer[]{Prayer.PROTECT_FROM_MELEE, Prayer.PROTECT_FROM_MISSILES, Prayer.PROTECT_FROM_MAGIC}) {
+            if (Prayers.isEnabled(p)) Prayers.toggle(p);
+        }
+    }
+
     private static void disableAllActivePrayers() {
         for (Prayer prayer : Prayer.values()) {
             if (Prayers.isEnabled(prayer)) {
@@ -863,6 +1218,9 @@ public class InfernoPlugin extends Plugin {
             case MELEE: return config.prayerMeleer();
             case RANGER: return config.prayerRanger();
             case MAGE: return config.prayerMage();
+            case AKREK_XIL: return config.prayerRanger();
+            case AKREK_MEJ: return config.prayerMage();
+            case AKREK_KET: return config.prayerMeleer();
             case HEALER_JAD: return config.prayerHealerJad();
             case JAD: return config.prayerJad();
             default: return false;
@@ -876,6 +1234,9 @@ public class InfernoPlugin extends Plugin {
             case MELEE: return config.ticksOnNpcMeleer();
             case RANGER: return config.ticksOnNpcRanger();
             case MAGE: return config.ticksOnNpcMage();
+            case AKREK_XIL: return config.ticksOnNpcRanger();
+            case AKREK_MEJ: return config.ticksOnNpcMage();
+            case AKREK_KET: return config.ticksOnNpcMeleer();
             case HEALER_JAD: return config.ticksOnNpcHealerJad();
             case JAD: return config.ticksOnNpcJad();
             case ZUK: return config.ticksOnNpcZuk();
@@ -890,6 +1251,9 @@ public class InfernoPlugin extends Plugin {
             case MELEE: return config.safespotsMeleer();
             case RANGER: return config.safespotsRanger();
             case MAGE: return config.safespotsMage();
+            case AKREK_XIL: return config.safespotsRanger();
+            case AKREK_MEJ: return config.safespotsMage();
+            case AKREK_KET: return config.safespotsMeleer();
             case HEALER_JAD: return config.safespotsHealerJad();
             case JAD: return config.safespotsJad();
             default: return false;

@@ -57,6 +57,13 @@ class InfernoNPC {
         this.safeSpotCache = new HashMap<>();
     }
 
+    private int getHealth() {
+        return npc.getHealthRatio() * 100;
+    }
+    boolean isDead() {
+        return getHealth() == 0;
+    }
+
     void updateNextAttack(Attack nextAttack, int ticksTillNextAttack) {
         this.idleTicks = 0;
         this.nextAttack = nextAttack;
@@ -142,6 +149,16 @@ class InfernoNPC {
     void gameTick(Client client, WorldPoint lastPlayerLocation, boolean finalPhase, int ticksSinceFinalPhase) {
         safeSpotCache.clear();
         this.idleTicks += 1;
+        if (type == Type.BLOB && ticksTillNextAttack == 3
+            && client.getLocalPlayer().getWorldLocation().distanceTo(npc.getWorldArea()) <= Type.BLOB.getRange()) {
+            Attack nextBlobAttack = Attack.MAGIC;
+            if (Prayers.isEnabled(Prayer.PROTECT_FROM_MISSILES)) {
+                nextBlobAttack = Attack.MAGIC;
+            } else if (Prayers.isEnabled(Prayer.PROTECT_FROM_MAGIC)) {
+                nextBlobAttack = Attack.RANGED;
+            }
+            updateNextAttack(nextBlobAttack);
+        }
         if (ticksTillNextAttack > 0) {
             this.ticksTillNextAttack--;
         }
@@ -197,22 +214,20 @@ class InfernoNPC {
                         updateNextAttack(type.getDefaultAttack(), 8);
                     }
                     break;
+                case AKREK_XIL:
+                case AKREK_MEJ:
+                case AKREK_KET:
+                    if (npc.getAnimation() == JAL_AK_RANGE_ATTACK || npc.getAnimation() == JAL_AK_MELEE_ATTACK
+                        || npc.getAnimation() == JAL_AK_MAGIC_ATTACK) {
+                        updateNextAttack(type.getDefaultAttack(), type.getTicksAfterAnimation());
+                    }
+                    break;
                 default:
                     if (npc.getAnimation() != -1) {
                         updateNextAttack(type.getDefaultAttack(), type.getTicksAfterAnimation());
                     }
                     break;
             }
-        }
-        if (type == Type.BLOB && ticksTillNextAttack == 3
-            && client.getLocalPlayer().getWorldLocation().distanceTo(npc.getWorldArea()) <= Type.BLOB.getRange()) {
-            Attack nextBlobAttack = Attack.UNKNOWN;
-            if (Prayers.isEnabled(Prayer.PROTECT_FROM_MISSILES)) {
-                nextBlobAttack = Attack.MAGIC;
-            } else if (Prayers.isEnabled(Prayer.PROTECT_FROM_MAGIC)) {
-                nextBlobAttack = Attack.RANGED;
-            }
-            updateNextAttack(nextBlobAttack);
         }
         lastAnimation = npc.getAnimation();
         lastCanAttack = canAttack(client, client.getLocalPlayer().getWorldLocation());
@@ -262,6 +277,9 @@ class InfernoNPC {
         MELEE(new int[]{net.runelite.api.NpcID.JALIMKOT}, Attack.MELEE, 4, 1, 3),
         RANGER(new int[]{net.runelite.api.NpcID.JALXIL, net.runelite.api.NpcID.JALXIL_7702}, Attack.RANGED, 4, 98, 2),
         MAGE(new int[]{net.runelite.api.NpcID.JALZEK, net.runelite.api.NpcID.JALZEK_7703}, Attack.MAGIC, 4, 98, 1),
+        AKREK_XIL(new int[]{net.runelite.api.NpcID.JALAKREKXIL}, Attack.RANGED, 4, 15, 8),
+        AKREK_MEJ(new int[]{net.runelite.api.NpcID.JALAKREKMEJ}, Attack.MAGIC, 4, 15, 9),
+        AKREK_KET(new int[]{net.runelite.api.NpcID.JALAKREKKET}, Attack.MELEE, 4, 1, 10),
         JAD(new int[]{net.runelite.api.NpcID.JALTOKJAD, net.runelite.api.NpcID.JALTOKJAD_7704, 10623}, Attack.UNKNOWN, 3, 99, 0),
         HEALER_JAD(new int[]{net.runelite.api.NpcID.YTHURKOT, net.runelite.api.NpcID.YTHURKOT_7701, net.runelite.api.NpcID.YTHURKOT_7705}, Attack.MELEE, 4, 1, 6),
         ZUK(new int[]{net.runelite.api.NpcID.TZKALZUK}, Attack.UNKNOWN, 10, 99, 99),
