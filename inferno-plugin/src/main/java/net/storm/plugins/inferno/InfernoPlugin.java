@@ -120,6 +120,8 @@ public class InfernoPlugin extends Plugin {
 
     private static final String MENU_MARK_MAGE = "Inferno: Mark as Mage gear";
     private static final String MENU_MARK_RANGE = "Inferno: Mark as Range gear";
+    private static final String MENU_SET_MAGE_TRIGGER = "Inferno: Add as Mage gear trigger";
+    private static final String MENU_SET_RANGE_TRIGGER = "Inferno: Add as Range gear trigger";
 
     private int[] lastEquipmentItemIds = new int[0];
     private final Set<Integer> pendingGearEquipIds = new LinkedHashSet<>();
@@ -536,6 +538,20 @@ public class InfernoPlugin extends Plugin {
             .setIdentifier(itemId)
             .setParam0(param0)
             .setParam1(param1);
+            client.createMenuEntry(-1)
+            .setOption(MENU_SET_MAGE_TRIGGER)
+            .setTarget("<col=ff9040>" + event.getTarget() + "</col>")
+            .setType(MenuAction.RUNELITE)
+            .setIdentifier(itemId)
+            .setParam0(param0)
+            .setParam1(param1);
+        client.createMenuEntry(-1)
+            .setOption(MENU_SET_RANGE_TRIGGER)
+            .setTarget("<col=ff9040>" + event.getTarget() + "</col>")
+            .setType(MenuAction.RUNELITE)
+            .setIdentifier(itemId)
+            .setParam0(param0)
+            .setParam1(param1);
     }
 
     @Subscribe
@@ -548,16 +564,32 @@ public class InfernoPlugin extends Plugin {
             event.consume();
             int id = event.getMenuEntry() != null ? event.getMenuEntry().getIdentifier() : event.getItemId();
             markItemAsGear(id, false);
+        } else if (MENU_SET_MAGE_TRIGGER.equals(event.getMenuOption())) {
+            event.consume();
+            int id = event.getMenuEntry() != null ? event.getMenuEntry().getIdentifier() : event.getItemId();
+            if (id > 0) addToTriggerSet(id, true);
+        } else if (MENU_SET_RANGE_TRIGGER.equals(event.getMenuOption())) {
+            event.consume();
+            int id = event.getMenuEntry() != null ? event.getMenuEntry().getIdentifier() : event.getItemId();
+            if (id > 0) addToTriggerSet(id, false);
         }
     }
 
     private static boolean menuContainsGearMarkOptions(net.runelite.api.MenuEntry[] entries) {
         if (entries == null) return false;
         for (var e : entries) {
-            if (e != null && (MENU_MARK_MAGE.equals(e.getOption()) || MENU_MARK_RANGE.equals(e.getOption())))
+            if (e != null && (MENU_MARK_MAGE.equals(e.getOption()) || MENU_MARK_RANGE.equals(e.getOption())
+                || MENU_SET_MAGE_TRIGGER.equals(e.getOption()) || MENU_SET_RANGE_TRIGGER.equals(e.getOption())))
                 return true;
         }
         return false;
+    }
+
+    private void addToTriggerSet(int itemId, boolean mage) {
+        Set<Integer> triggers = parseGearIds(mage ? config.mageGearTrigger() : config.rangeGearTrigger());
+        String key = mage ? "mageGearTrigger" : "rangeGearTrigger";
+        triggers.add(itemId);
+        configManager.setConfiguration(InfernoConfig.GROUP, key, serializeGearIds(triggers));
     }
 
     private void markItemAsGear(int itemId, boolean asMage) {
@@ -605,15 +637,15 @@ public class InfernoPlugin extends Plugin {
         int[] newlyEquipped = findNewlyEquipped(lastEquipmentItemIds, current);
         lastEquipmentItemIds = current;
         if (newlyEquipped.length == 0) return;
-        Set<Integer> mage = parseGearIds(config.mageGearIds());
-        Set<Integer> range = parseGearIds(config.rangeGearIds());
+        Set<Integer> mageTriggers = parseGearIds(config.mageGearTrigger());
+        Set<Integer> rangeTriggers = parseGearIds(config.rangeGearTrigger());
         for (int id : newlyEquipped) {
-            if (mage.contains(id)) {
-                queueGearSet(mage);
+            if (mageTriggers.contains(id)) {
+                queueGearSet(parseGearIds(config.mageGearIds()));
                 return;
             }
-            if (range.contains(id)) {
-                queueGearSet(range);
+            if (rangeTriggers.contains(id)) {
+                queueGearSet(parseGearIds(config.rangeGearIds()));
                 return;
             }
         }
