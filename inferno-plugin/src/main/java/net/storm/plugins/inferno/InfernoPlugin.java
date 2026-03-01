@@ -44,6 +44,7 @@ import net.runelite.client.game.ItemStats;
 import net.runelite.client.ui.overlay.OverlayManager;
 import net.storm.api.Static;
 import net.storm.api.events.ConfigChanged;
+import net.storm.api.interact.InteractMethod;
 import net.storm.api.plugins.Plugin;
 import net.storm.api.plugins.PluginDescriptor;
 import net.storm.api.plugins.config.ConfigManager;
@@ -280,7 +281,7 @@ public class InfernoPlugin extends Plugin {
         if (freezingNibblers) {
             boolean nibblerFrozen = client.getLocalPlayer().getAnimation() == 10092;
             if (nibblerFrozen) {
-                Prayers.toggle(getOffensivePrayerForCurrentStyle());
+                Prayers.toggle(config.interactMethod(), getOffensivePrayerForCurrentStyle());
                 freezingNibblers = false;
                 // WorldPoint SAFE_SPOT_CORNER = WorldPoint.toLocalInstance(Static.getClient().getTopLevelWorldView(), new WorldPoint(2276, 5354, 0)).stream().findFirst().orElse(null);
                 // Movement.walkTo(SAFE_SPOT_CORNER, new LocalCollisionMap(true));
@@ -303,7 +304,7 @@ public class InfernoPlugin extends Plugin {
             Prayer needThisTick = getPrayerForTick(1);
             Prayer needNextTick = getPrayerForTick(2);
             if (armedProtectionPrayer != needTick0 && armedProtectionPrayer != needThisTick && armedProtectionPrayer != needNextTick) {
-                if (Prayers.isEnabled(armedProtectionPrayer)) Prayers.toggle(armedProtectionPrayer);
+                if (Prayers.isEnabled(armedProtectionPrayer)) Prayers.toggle(config.interactMethod(), armedProtectionPrayer);
             }
             resetProtectionFlickState();
         }
@@ -312,18 +313,18 @@ public class InfernoPlugin extends Plugin {
             if (config.lazyFlick()) {
                 if ((closestAttackTick == 0 || closestAttackTick == 1) && needed != null) {
                     if (!Prayers.isEnabled(needed)) {
-                        Prayers.toggle(needed);
+                        Prayers.toggle(config.interactMethod(), needed);
                         armedProtectionPrayer = needed;
                         disablePrayerNextTick = true;
                     }
                 } else {
-                    disableProtectionPrayers();
+                    disableProtectionPrayers(config.interactMethod());
                 }
             } else {
                 if (needed != null) {
-                    toggleProtectionPrayer(needed);
+                    toggleProtectionPrayer(config.interactMethod(), needed);
                 } else {
-                    disableAllActivePrayers();
+                    disableAllActivePrayers(config.interactMethod());
                 }
             }
         }
@@ -395,7 +396,7 @@ public class InfernoPlugin extends Plugin {
                         .findFirst().orElse(null);
                     if (nibbler != null && nibbler.isInteractable()) {
                         try {
-                            Prayers.toggle(getOffensivePrayerForCurrentStyle());
+                            Prayers.toggle(config.interactMethod(), getOffensivePrayerForCurrentStyle());
                             SpellBook.Ancient.ICE_BARRAGE.castOn(nibbler);
                             freezingNibblers = true;
                         } catch (Throwable ignored) { }
@@ -701,7 +702,7 @@ public class InfernoPlugin extends Plugin {
             }
             String action = getEquipAction(itemId);
             if (action != null) {
-                invItem.interact(action);
+                invItem.interact(config.interactMethod(), action);
                 equipAttempts++;
             }
         }
@@ -730,7 +731,7 @@ public class InfernoPlugin extends Plugin {
         String message = event.getMessage();
         if (message.contains("Wave completed!")) {
             resetLazyFlickState();
-            disableAllActivePrayers();
+            disableAllActivePrayers(config.interactMethod());
             equipMageGear();
             WorldPoint START_TILE = WorldPoint.toLocalInstance(Static.getClient().getTopLevelWorldView(), new WorldPoint(2274, 5355, 0)).stream().findFirst().orElse(null);
             Movement.walkTo(START_TILE, new LocalCollisionMap(true));
@@ -762,11 +763,11 @@ public class InfernoPlugin extends Plugin {
                 && isPrayerHelper(infernoNPC)) {
                 InfernoNPC.Attack bestSync = getHighestPriorityAttackAtTick(3);
                 if (bestSync == InfernoNPC.Attack.MAGIC) {
-                    Prayers.toggle(Prayer.PROTECT_FROM_MISSILES);
+                    Prayers.toggle(config.interactMethod(), Prayer.PROTECT_FROM_MISSILES);
                 } else if (bestSync == InfernoNPC.Attack.RANGED) {
-                    Prayers.toggle(Prayer.PROTECT_FROM_MAGIC);
+                    Prayers.toggle(config.interactMethod(), Prayer.PROTECT_FROM_MAGIC);
                 } else {
-                    Prayers.toggle(Prayer.PROTECT_FROM_MAGIC);
+                    Prayers.toggle(config.interactMethod(), Prayer.PROTECT_FROM_MAGIC);
                 }
             }
             infernoNPC.gameTick(client, lastLocation, finalPhase, ticksSinceFinalPhase);
@@ -834,8 +835,12 @@ public class InfernoPlugin extends Plugin {
         if (!isPreemptivePrayerCandidate(infernoNPC)) {
             return;
         }
-        addUpcomingAttack(0, infernoNPC.getType().getDefaultAttack(), infernoNPC.getType().getPriority());
-        addUpcomingAttack(1, infernoNPC.getType().getDefaultAttack(), infernoNPC.getType().getPriority());
+        InfernoNPC.Attack att = infernoNPC.getType().getDefaultAttack();
+        if (att == InfernoNPC.Attack.RANGED || att == InfernoNPC.Attack.MAGIC) {
+            waveLog("preemptive_add", "{\"type\":\"" + infernoNPC.getType() + "\",\"attack\":\"" + att + "\",\"ticks\":0}");
+        }
+        addUpcomingAttack(0, att, infernoNPC.getType().getPriority());
+        addUpcomingAttack(1, att, infernoNPC.getType().getPriority());
     }
 
     private boolean isPreemptivePrayerCandidate(InfernoNPC infernoNPC) {
@@ -900,6 +905,19 @@ public class InfernoPlugin extends Plugin {
                 }
             }
             closestAttackTick = closestTick;
+            boolean hasRanger = infernoNpcs.stream().anyMatch(n -> n.getType() == InfernoNPC.Type.RANGER);
+            boolean hasMage = infernoNpcs.stream().anyMatch(n -> n.getType() == InfernoNPC.Type.MAGE);
+            if (hasRanger && hasMage && closestAttackTick <= 2) {
+                StringBuilder sb = new StringBuilder("{");
+                for (Integer t : upcomingAttacks.keySet()) {
+                    if (sb.length() > 1) sb.append(",");
+                    sb.append("\"t").append(t).append("\":");
+                    Map<InfernoNPC.Attack, Integer> m = upcomingAttacks.get(t);
+                    sb.append(m != null ? m.toString() : "{}");
+                }
+                sb.append(",\"picked\":\"").append(closestAttack).append("\",\"tick\":").append(closestAttackTick).append("}");
+                waveLog("lazy_flick_pick", sb.toString());
+            }
         }
     }
 
@@ -964,7 +982,7 @@ public class InfernoPlugin extends Plugin {
 
     private void disableArmedOffensivePrayer() {
         if (armedOffensivePrayer == null) return;
-        if (Prayers.isEnabled(armedOffensivePrayer)) Prayers.toggle(armedOffensivePrayer);
+        if (Prayers.isEnabled(armedOffensivePrayer)) Prayers.toggle(config.interactMethod(), armedOffensivePrayer);
     }
 
     private void processOffensiveLazyFlick() {
@@ -996,7 +1014,7 @@ public class InfernoPlugin extends Plugin {
             }
             if (offensiveFirstAttackSeen && offensiveTicksSinceLastAttack == attackSpeed - 1) {
                 if (!Prayers.isEnabled(offensivePrayer)) {
-                    Prayers.toggle(offensivePrayer);
+                    Prayers.toggle(config.interactMethod(), offensivePrayer);
                 }
                 armedOffensivePrayer = offensivePrayer;
             } else if (offensiveTicksSinceLastAttack == attackSpeed && armedOffensivePrayer != null) {
@@ -1206,9 +1224,9 @@ public class InfernoPlugin extends Plugin {
         return 0;
     }
 
-    private static void toggleProtectionPrayer(Prayer prayer) {
+    private static void toggleProtectionPrayer(InteractMethod method, Prayer prayer) {
         if (!Prayers.isEnabled(prayer)) {
-            Prayers.toggle(prayer);
+            Prayers.toggle(method, prayer);
         }
     }
 
@@ -1229,18 +1247,14 @@ public class InfernoPlugin extends Plugin {
         resetOffensiveFlickState();
     }
 
-    private static void disableProtectionPrayers() {
+    private static void disableProtectionPrayers(InteractMethod method) {
         for (Prayer p : new Prayer[]{Prayer.PROTECT_FROM_MELEE, Prayer.PROTECT_FROM_MISSILES, Prayer.PROTECT_FROM_MAGIC}) {
-            if (Prayers.isEnabled(p)) Prayers.toggle(p);
+            if (Prayers.isEnabled(p)) Prayers.toggle(method, p);
         }
     }
 
-    private static void disableAllActivePrayers() {
-        for (Prayer prayer : Prayer.values()) {
-            if (Prayers.isEnabled(prayer)) {
-                Prayers.toggle(prayer);
-            }
-        }
+    private static void disableAllActivePrayers(InteractMethod method) {
+        Prayers.disableAll(method);
     }
 
     private boolean isPrayerHelper(InfernoNPC infernoNPC) {

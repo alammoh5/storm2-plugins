@@ -9,6 +9,7 @@ import net.storm.api.plugins.config.Config;
 import net.storm.api.plugins.config.ConfigGroup;
 import net.storm.api.plugins.config.ConfigItem;
 import net.storm.api.plugins.config.ConfigSection;
+import net.storm.api.interact.InteractMethod;
 import net.storm.plugins.inferno.displaymodes.InfernoNamingDisplayMode;
 import net.storm.plugins.inferno.displaymodes.InfernoPrayerDisplayMode;
 import net.storm.plugins.inferno.displaymodes.InfernoSafespotDisplayMode;
@@ -274,6 +275,9 @@ public interface InfernoConfig extends Config {
 
     @ConfigItem(position = 7, keyName = "debug", name = "Debug overlay", description = "Show debug overlay with player animation", section = ExtraSection)
     default boolean debug() { return false; }
+
+    @ConfigItem(position = 8, keyName = "interactMethod", name = "Interact method", description = "INVOKE = direct menu action; MOUSE_EVENTS = simulated mouse clicks", section = ExtraSection, enumClass = InteractMethod.class)
+    default InteractMethod interactMethod() { return InteractMethod.INVOKE; }
 
     default InfernoPrayerDisplayMode getPrayerDisplayMode() {
         try { return InfernoPrayerDisplayMode.valueOf(prayerDisplayMode()); } catch (Exception e) { return InfernoPrayerDisplayMode.BOTH; }
