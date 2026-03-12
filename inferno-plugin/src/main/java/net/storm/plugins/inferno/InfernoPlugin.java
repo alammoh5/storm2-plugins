@@ -66,11 +66,6 @@ import org.pf4j.Extension;
 
 import javax.inject.Singleton;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
 
 @Singleton
 @Getter(AccessLevel.PACKAGE)
@@ -153,33 +148,14 @@ public class InfernoPlugin extends Plugin {
     private boolean disablePrayerNextTick = false;
 
     // #region agent log
-    private static final int HITSPLAT_DAMAGE_ME_CYAN = 18;
-    private static final int HITSPLAT_DAMAGE_ME_ORANGE = 20;
-    private static final int HITSPLAT_DAMAGE_ME_YELLOW = 22;
-    private static final Path WAVE_LOG_PATH = Paths.get("c:/Users/Alam/Documents/GitHub/storm2-plugins/.cursor/debug.log");
-
-    private static void waveLog(String event, String dataJson) {
-        try {
-            String json = "{\"event\":\"" + event + "\",\"data\":" + (dataJson != null ? dataJson : "{}") + ",\"timestamp\":" + System.currentTimeMillis() + "}";
-            Files.write(WAVE_LOG_PATH, (json + "\n").getBytes(StandardCharsets.UTF_8), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-        } catch (Exception ignored) {}
-    }
-
-    private static InfernoNPC.Attack hitsplatTypeToAttack(int hitsplatType) {
-        if (hitsplatType == HITSPLAT_DAMAGE_ME_ORANGE) return InfernoNPC.Attack.MELEE;
-        if (hitsplatType == HITSPLAT_DAMAGE_ME_YELLOW) return InfernoNPC.Attack.RANGED;
-        if (hitsplatType == HITSPLAT_DAMAGE_ME_CYAN) return InfernoNPC.Attack.MAGIC;
-        return null;
-    }
-
     private Map<Integer, Map<InfernoNPC.Attack, Integer>> lastUpcomingAttacks = new HashMap<>();
     private InfernoNPC.Attack lastClosestAttack = null;
     private int lastClosestAttackTick = 999;
-    // #endregion
     private Prayer armedOffensivePrayer = null;
     private int offensiveTicksSinceLastAttack = -1;
     private boolean offensiveFirstAttackSeen = false;
     private int lastOffensiveAnim = -1;
+    private int ticksSinceNotInteracting = 0;
 
     @Getter(AccessLevel.PACKAGE)
     private final List<WorldPoint> obstacles = new ArrayList<>();
@@ -318,7 +294,13 @@ public class InfernoPlugin extends Plugin {
                         disablePrayerNextTick = true;
                     }
                 } else {
-                    disableProtectionPrayers(config.interactMethod());
+                    Prayer activeProtection = null;
+                    if (Prayers.isEnabled(Prayer.PROTECT_FROM_MELEE)) activeProtection = Prayer.PROTECT_FROM_MELEE;
+                    else if (Prayers.isEnabled(Prayer.PROTECT_FROM_MISSILES)) activeProtection = Prayer.PROTECT_FROM_MISSILES;
+                    else if (Prayers.isEnabled(Prayer.PROTECT_FROM_MAGIC)) activeProtection = Prayer.PROTECT_FROM_MAGIC;
+                    if (activeProtection == null || (getPrayerForTick(0) != activeProtection && getPrayerForTick(1) != activeProtection)) {
+                        disableProtectionPrayers(config.interactMethod());
+                    }
                 }
             } else {
                 if (needed != null) {
@@ -355,27 +337,6 @@ public class InfernoPlugin extends Plugin {
 
     @Subscribe
     private void onHitsplatApplied(HitsplatApplied event) {
-        if (!isInInferno()) return;
-        if (event.getActor() != client.getLocalPlayer()) return;
-        var hitsplat = event.getHitsplat();
-        if (hitsplat.getAmount() <= 0) return;
-        int type = hitsplat.getHitsplatType();
-        InfernoNPC.Attack attackType = hitsplatTypeToAttack(type);
-        Prayer activePrayer = null;
-        if (Prayers.isEnabled(Prayer.PROTECT_FROM_MELEE)) activePrayer = Prayer.PROTECT_FROM_MELEE;
-        else if (Prayers.isEnabled(Prayer.PROTECT_FROM_MISSILES)) activePrayer = Prayer.PROTECT_FROM_MISSILES;
-        else if (Prayers.isEnabled(Prayer.PROTECT_FROM_MAGIC)) activePrayer = Prayer.PROTECT_FROM_MAGIC;
-        Prayer correctPrayer = attackType != null ? attackType.getPrayer() : null;
-        boolean wasCorrect = correctPrayer != null && correctPrayer == activePrayer;
-        Set<InfernoNPC.Attack> attacksAtTick1 = lastUpcomingAttacks.containsKey(1)
-            ? lastUpcomingAttacks.get(1).keySet() : Set.of();
-        boolean possiblyUnavoidable = attacksAtTick1.size() > 1;
-        waveLog("damage", "{\"wave\":" + currentWaveNumber + ",\"amount\":" + hitsplat.getAmount()
-            + ",\"hitsplatType\":" + type + ",\"attackType\":\"" + (attackType != null ? attackType : "?") + "\""
-            + ",\"activePrayer\":\"" + (activePrayer != null ? activePrayer : "none") + "\""
-            + ",\"correctPrayer\":\"" + (correctPrayer != null ? correctPrayer : "?") + "\""
-            + ",\"wasCorrect\":" + wasCorrect + ",\"possiblyUnavoidable\":" + possiblyUnavoidable
-            + ",\"attacksAtTick1\":" + attacksAtTick1 + ",\"lastClosestAttack\":\"" + lastClosestAttack + "\"}");
     }
 
     @Subscribe
@@ -405,7 +366,6 @@ public class InfernoPlugin extends Plugin {
                 break;
             case BLOB:
                 infernoNpcs.add(new InfernoNPC(event.getNpc()));
-                waveLog("npc_spawn", "{\"wave\":" + currentWaveNumber + ",\"type\":\"" + type + "\",\"attack\":\"" + (type.getDefaultAttack() != null ? type.getDefaultAttack() : "UNKNOWN") + "\"}");
                 return;
             case MAGE:
                 if (zuk != null && spawnTimerInfoBox != null) {
@@ -437,7 +397,6 @@ public class InfernoPlugin extends Plugin {
                 break;
         }
         infernoNpcs.add(0, new InfernoNPC(event.getNpc()));
-        waveLog("npc_spawn", "{\"wave\":" + currentWaveNumber + ",\"type\":\"" + type + "\",\"attack\":\"" + (type.getDefaultAttack() != null ? type.getDefaultAttack() : "UNKNOWN") + "\"}");
     }
 
     @Subscribe
@@ -469,6 +428,18 @@ public class InfernoPlugin extends Plugin {
         if (!isInInferno()) return;
         if (event.getActor() instanceof NPC) {
             NPC npc = (NPC) event.getActor();
+            InfernoNPC.Attack attack = InfernoNPC.Attack.attackFromId(npc.getAnimation());
+            if (attack != null && attack != InfernoNPC.Attack.UNKNOWN) {
+                for (InfernoNPC infernoNPC : infernoNpcs) {
+                    if (infernoNPC.getNpc() == npc) {
+                        InfernoNPC.Type t = infernoNPC.getType();
+                        InfernoNPC.Attack attackForPrayer = (t == InfernoNPC.Type.AKREK_XIL || t == InfernoNPC.Type.AKREK_MEJ || t == InfernoNPC.Type.AKREK_KET)
+                            ? t.getDefaultAttack() : attack;
+                        infernoNPC.updateNextAttack(attackForPrayer, t.getTicksAfterAnimation());
+                        break;
+                    }
+                }
+            }
             if (contains(NPC_TYPE_NIBBLER_IDS, npc.getId()) && npc.getAnimation() == 7576) {
                 infernoNpcs.removeIf(infernoNPC -> infernoNPC.getNpc() == npc);
             }
@@ -739,7 +710,6 @@ public class InfernoPlugin extends Plugin {
         if (message.contains("Wave:")) {
             message = message.substring(message.indexOf(": ") + 2);
             currentWaveNumber = Integer.parseInt(message.substring(0, message.indexOf('<')));
-            waveLog("wave_start", "{\"wave\":" + currentWaveNumber + "}");
         }
     }
 
@@ -819,6 +789,8 @@ public class InfernoPlugin extends Plugin {
         lastLocation = playerLoc;
     }
 
+    private static final int PREEMPTIVE_PRIORITY_PENALTY = 50;
+
     private void addPreemptiveAttackForFirstHit(InfernoNPC infernoNPC, WorldPoint playerLoc) {
         if (infernoNPC.getTicksTillNextAttack() > 0) {
             return;
@@ -826,21 +798,27 @@ public class InfernoPlugin extends Plugin {
         if (!canThreatenPlayerTile(infernoNPC, playerLoc)) {
             return;
         }
+        boolean canAttackDirect = infernoNPC.canAttack(client, playerLoc);
         if (infernoNPC.getType() == InfernoNPC.Type.BLOB) {
             if (!isPrayerHelper(infernoNPC)) return;
-            addUpcomingAttack(1, InfernoNPC.Attack.MAGIC, infernoNPC.getType().getPriority());
-            addUpcomingAttack(1, InfernoNPC.Attack.RANGED, infernoNPC.getType().getPriority());
+            int blobPrio = infernoNPC.getType().getPriority() + PREEMPTIVE_PRIORITY_PENALTY;
+            addUpcomingAttack(1, InfernoNPC.Attack.MAGIC, blobPrio);
+            addUpcomingAttack(1, InfernoNPC.Attack.RANGED, blobPrio);
             return;
         }
         if (!isPreemptivePrayerCandidate(infernoNPC)) {
             return;
         }
-        InfernoNPC.Attack att = infernoNPC.getType().getDefaultAttack();
-        if (att == InfernoNPC.Attack.RANGED || att == InfernoNPC.Attack.MAGIC) {
-            waveLog("preemptive_add", "{\"type\":\"" + infernoNPC.getType() + "\",\"attack\":\"" + att + "\",\"ticks\":0}");
+        InfernoNPC.Attack def = infernoNPC.getType().getDefaultAttack();
+        boolean isHighPriority = infernoNPC.getType() == InfernoNPC.Type.MAGE || infernoNPC.getType() == InfernoNPC.Type.RANGER;
+        if (def == InfernoNPC.Attack.RANGED || def == InfernoNPC.Attack.MAGIC) {
+            if (!isHighPriority && !canAttackDirect) {
+                return;
+            }
         }
-        addUpcomingAttack(0, att, infernoNPC.getType().getPriority());
-        addUpcomingAttack(1, att, infernoNPC.getType().getPriority());
+        int preemptivePrio = isHighPriority ? infernoNPC.getType().getPriority() : infernoNPC.getType().getPriority() + PREEMPTIVE_PRIORITY_PENALTY;
+        addUpcomingAttack(0, def, preemptivePrio);
+        addUpcomingAttack(1, def, preemptivePrio);
     }
 
     private boolean isPreemptivePrayerCandidate(InfernoNPC infernoNPC) {
@@ -872,9 +850,6 @@ public class InfernoPlugin extends Plugin {
 
     private boolean canThreatenPlayerTile(InfernoNPC infernoNPC, WorldPoint playerLoc) {
         InfernoNPC.Attack def = infernoNPC.getType().getDefaultAttack();
-        if (def == InfernoNPC.Attack.MELEE) {
-            return infernoNPC.canAttack(client, playerLoc);
-        }
         return infernoNPC.canAttack(client, playerLoc)
             || infernoNPC.canMoveToAttack(client, playerLoc, obstacles);
     }
@@ -893,30 +868,44 @@ public class InfernoPlugin extends Plugin {
         if (prayerDisplayMode == InfernoPrayerDisplayMode.PRAYER_TAB || prayerDisplayMode == InfernoPrayerDisplayMode.BOTH) {
             int closestTick = 999;
             int closestPriority = 999;
+            int closestTickPreemptiveOnly = 999;
+            int closestPriorityPreemptiveOnly = 999;
+            InfernoNPC.Attack closestAttackPreemptiveOnly = null;
             for (Integer tick : upcomingAttacks.keySet()) {
                 Map<InfernoNPC.Attack, Integer> attackPriority = upcomingAttacks.get(tick);
+                int bestPrioAtTick = 999;
+                InfernoNPC.Attack bestAttackAtTick = null;
+                boolean hasConfirmed = false;
                 for (InfernoNPC.Attack currentAttack : attackPriority.keySet()) {
                     int currentPriority = attackPriority.get(currentAttack);
-                    if (tick < closestTick || (tick == closestTick && currentPriority < closestPriority)) {
-                        closestAttack = currentAttack;
-                        closestPriority = currentPriority;
+                    if (currentPriority < bestPrioAtTick) {
+                        bestPrioAtTick = currentPriority;
+                        bestAttackAtTick = currentAttack;
+                    }
+                    if (currentPriority < PREEMPTIVE_PRIORITY_PENALTY) {
+                        hasConfirmed = true;
+                    }
+                }
+                if (bestAttackAtTick == null) continue;
+                if (hasConfirmed) {
+                    if (tick < closestTick || (tick == closestTick && bestPrioAtTick < closestPriority)) {
+                        closestAttack = bestAttackAtTick;
+                        closestPriority = bestPrioAtTick;
                         closestTick = tick;
+                    }
+                } else {
+                    if (tick < closestTickPreemptiveOnly || (tick == closestTickPreemptiveOnly && bestPrioAtTick < closestPriorityPreemptiveOnly)) {
+                        closestAttackPreemptiveOnly = bestAttackAtTick;
+                        closestPriorityPreemptiveOnly = bestPrioAtTick;
+                        closestTickPreemptiveOnly = tick;
                     }
                 }
             }
-            closestAttackTick = closestTick;
-            boolean hasRanger = infernoNpcs.stream().anyMatch(n -> n.getType() == InfernoNPC.Type.RANGER);
-            boolean hasMage = infernoNpcs.stream().anyMatch(n -> n.getType() == InfernoNPC.Type.MAGE);
-            if (hasRanger && hasMage && closestAttackTick <= 2) {
-                StringBuilder sb = new StringBuilder("{");
-                for (Integer t : upcomingAttacks.keySet()) {
-                    if (sb.length() > 1) sb.append(",");
-                    sb.append("\"t").append(t).append("\":");
-                    Map<InfernoNPC.Attack, Integer> m = upcomingAttacks.get(t);
-                    sb.append(m != null ? m.toString() : "{}");
-                }
-                sb.append(",\"picked\":\"").append(closestAttack).append("\",\"tick\":").append(closestAttackTick).append("}");
-                waveLog("lazy_flick_pick", sb.toString());
+            if (closestTick == 999 && closestAttackPreemptiveOnly != null) {
+                closestAttack = closestAttackPreemptiveOnly;
+                closestAttackTick = closestTickPreemptiveOnly;
+            } else {
+                closestAttackTick = closestTick;
             }
         }
     }
@@ -953,7 +942,11 @@ public class InfernoPlugin extends Plugin {
         ItemStats stats = weaponId != -1 ? itemManager.getItemStats(weaponId) : null;
         int base = (stats != null && stats.getEquipment() != null) ? stats.getEquipment().getAspeed() : 5;
         WeaponStyle style = Combat.getCurrentWeaponStyle();
-        if (style == WeaponStyle.RANGE && client.getVarpValue(VarPlayer.ATTACK_STYLE) == 1) {
+        int attackStyleVarp = client.getVarpValue(VarPlayer.ATTACK_STYLE);
+        boolean rapidApplied = style == WeaponStyle.RANGE && attackStyleVarp == 1;
+        if (style == WeaponStyle.MAGIC) {
+            base = 5;
+        } else if (rapidApplied) {
             base = Math.max(2, base - 1);
         }
         return Math.max(2, Math.min(6, base));
@@ -989,9 +982,13 @@ public class InfernoPlugin extends Plugin {
         boolean interacting = isInteractingWithNpc();
         if (!interacting) {
             disableArmedOffensivePrayer();
-            resetOffensiveFlickState();
+            ticksSinceNotInteracting++;
+            if (ticksSinceNotInteracting == 15) {
+                resetOffensiveFlickState();
+            }
             return;
         }
+        ticksSinceNotInteracting = 0;
         Prayer offensivePrayer = getOffensivePrayerForCurrentStyle();
         if (offensivePrayer == null) return;
 
